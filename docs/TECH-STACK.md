@@ -83,7 +83,7 @@ preclude, Tier 3 is where we're allowed to degrade gracefully.**
 
 | | Grid | Area @8m cells | Population | Frame / sim target |
 |---|---|---|---|---|
-| **Tier 1** — M1 ship gate | 512² (262k tiles) | ~16 km² | ~200k | 60fps, 10 ticks/s, mid-range 2023 laptop |
+| **Tier 1** — ship gate | 512² (262k tiles) | ~16 km² | ~200k | 60fps, 10 ticks/s, mid-range 2023 laptop |
 | **Tier 2** — must remain reachable | 1024² (1.05M tiles) | ~67 km² | ~1M | 60fps, 10 ticks/s |
 | **Tier 3** — "metropolis mode" | 2048² (4.2M tiles) | ~268 km² | multi-million | 30fps acceptable; sim may slow gracefully, never stall |
 

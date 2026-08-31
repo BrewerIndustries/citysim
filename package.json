@@ -1,0 +1,13 @@
+{
+  "name": "citysim",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "A SimCity-spirit city builder",
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "bench": "node src/bench/bench.ts",
+    "bench:full": "node src/bench/bench.ts --tiers=1,2,3"
+  },
+  "engines": { "node": ">=22.6" }
+}

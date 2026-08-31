@@ -16,7 +16,7 @@ a ¾ view for when you're looking. Offline, single-player, no DRM, no timers.
 | Doc | What's in it |
 |---|---|
 | [RESEARCH.md](docs/RESEARCH.md) | Every SimCity version + the successors, what shipped, what people loved and hated, with sources |
-| [FEATURES.md](docs/FEATURES.md) | Tiered feature list (M0 vertical slice → M1 shippable → M2+), plus the traffic and performance rules |
+| [FEATURES.md](docs/FEATURES.md) | Feature list in build order (S0 vertical slice → S1 shippable → S2+), plus the traffic and performance rules |
 | [DO-NOT-DO.md](docs/DO-NOT-DO.md) | 18 anti-goals, each tied to a documented failure in a real game |
 | [CAMERA-AND-ART.md](docs/CAMERA-AND-ART.md) | Perspective analysis (top-down vs iso vs 3D vs hybrid) and art direction |
 | [SIMULATION-MODEL.md](docs/SIMULATION-MODEL.md) | Field-based vs agent-based explained, and the three-layer hybrid we're building |
@@ -44,14 +44,14 @@ a ¾ view for when you're looking. Offline, single-player, no DRM, no timers.
 - **Art:** architectural scale model — matte materials, heavy ambient occlusion, semantic
   palette by land use, modular kit-of-parts buildings. Realistic proportions, not
   photoreal surfaces.
-- **First milestone:** one city tile, one hour of play, the Why Panel working, three data
-  layers, zoning that grows and abandons for reasons you can read on screen.
+- **First slice (S0):** one city tile, the Why Panel working, three data layers, zoning
+  that grows and abandons for reasons you can read on screen.
 
 ## Status
 
-Planning. Four of the five blockers are answered (intent, stack, scale, simulation model).
-The last one is **F1 — how much time per week**, which sets whether M0 is six weeks or six
-months. Everything else in [OPEN-QUESTIONS.md](docs/OPEN-QUESTIONS.md) can be decided later
-without rework.
+**Building.** The architectural blockers are settled (intent, stack, scale, simulation
+model). No schedule and no effort estimates — slices are ordered by dependency and it's
+done when it's done. Remaining questions in
+[OPEN-QUESTIONS.md](docs/OPEN-QUESTIONS.md) get answered when they block something.
 
 Local git on `dev`, no remote yet.

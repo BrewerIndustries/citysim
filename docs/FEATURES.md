@@ -1,8 +1,11 @@
 # Feature List
 
-Tiered. **M0** is the vertical slice that proves the game is fun. **M1** is a shippable
-game. **M2+** is what makes it *the* one. Anything not in M0/M1 is explicitly deferred —
-this list is as much about sequencing as about scope.
+Ordered by dependency, not by schedule. **S0** is the vertical slice that proves the game
+is fun. **S1** is a shippable game. **S2+** is what makes it *the* one. Anything not in
+S0/S1 is explicitly deferred.
+
+These are **not estimates and not deadlines** — they're a build order, describing what has
+to exist before what. Done is done.
 
 ---
 
@@ -15,9 +18,9 @@ this list is as much about sequencing as about scope.
 
 ---
 
-## M0 — Vertical slice ("is this fun?")
+## S0 — Vertical slice ("is this fun?")
 
-The goal: one city tile, one hour of play, proving the core loop.
+The goal: one city tile, proving the core loop.
 
 ### Core simulation
 - [ ] Tile grid, ~8m cells, single city tile (start 256×256 ≈ 4km², expandable)
@@ -52,7 +55,7 @@ The goal: one city tile, one hour of play, proving the core loop.
 
 ---
 
-## M1 — Shippable game
+## S1 — Shippable game
 
 ### Simulation depth
 - [ ] Full wealth tiers (3 residential, 3 commercial, 2–3 industrial incl. dirty/mfg/hi-tech)
@@ -85,7 +88,7 @@ The goal: one city tile, one hour of play, proving the core loop.
 ### Structure
 - [ ] **Region play** — multiple city tiles on a shared map, trading power/water/garbage
       and **commuters**. SC4's crown jewel; still unmatched. Design for it from day one
-      even if it lands in M1, because it constrains the save format and the sim boundary.
+      even if it lands in S1, because it constrains the save format and the sim boundary.
 - [ ] Scenario mode — authored challenges with win/lose conditions (the 1989 tradition)
 - [ ] Sandbox mode with unlimited money and all buildings
 - [ ] Difficulty settings that change *economic pressure*, not just starting cash
@@ -97,7 +100,7 @@ The goal: one city tile, one hour of play, proving the core loop.
 
 ---
 
-## M2+ — What makes it the one
+## S2+ — What makes it the one
 
 - [ ] **Mod / asset pipeline** as a supported product (every entry with real modding
       outlived every entry without it). Data-driven building definitions, an asset import
@@ -140,7 +143,7 @@ The rule for this project: **traffic must be teachable.**
 Cities: Skylines II shipped knowingly broken and it defined the game's reputation
 permanently. Performance is a design constraint here, not a polish task:
 - Targets are **tiered** (full table in [TECH-STACK.md](TECH-STACK.md)):
-  **Tier 1** 512² / 200k pop / 60fps + 10 ticks/s is the M1 ship gate;
+  **Tier 1** 512² / 200k pop / 60fps + 10 ticks/s is the ship gate;
   **Tier 2** 1024² / ~1M pop must stay reachable;
   **Tier 3** 2048² / multi-million ("metropolis mode") may degrade to 30fps but must never
   stall. Ship Tier 1, never foreclose Tier 3.

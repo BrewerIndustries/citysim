@@ -9,17 +9,21 @@ be decided later without rework.
 > **Answered 2026-08-31:** A1 (commercial release intended), B1 (TS + three.js),
 > B2 (tiered targets, Tier 3 metropolis headroom), D1 (field-based confirmed).
 > Consequences written up in [TECH-STACK.md](TECH-STACK.md) and
-> [SIMULATION-MODEL.md](SIMULATION-MODEL.md). Still open: everything else.
+> [SIMULATION-MODEL.md](SIMULATION-MODEL.md).
+>
+> **No schedule, no effort estimates.** Slices are ordered by what has to exist before what.
+> Build proceeds; the remaining questions get answered when they block something.
 
 ---
 
 ## A. Intent & audience
 
 **A1. [BLOCKER] What is this, honestly?** — ✅ **ANSWERED: commercial release intended.**
-Built in vertical slices, each independently playable, but aimed at an actual paid release
-on Steam rather than a toy. This raises the bar on save-format stability, performance
-budgets, and mod support — all now reflected in TECH-STACK.md.
+Built in vertical slices, each independently playable, aimed at an actual paid release on
+Steam rather than a toy. This raises the bar on save-format stability, performance budgets,
+and mod support — all reflected in TECH-STACK.md.
 *Still to decide later: price point, Early Access or not, and demo strategy.*
+**No schedule.** It's done when it's done; slices are ordered by dependency, not by date.
 
 **A2. Who's the player?**
 (a) You. (b) Lapsed SimCity 4 players who want the depth without the opacity. (c) People
@@ -190,12 +194,6 @@ name them neutrally, take no partisan position.*
 
 ## F. Process & constraints
 
-**F1. [BLOCKER] How much time per week, realistically?**
-This decides whether M0 is 6 weeks or 6 months, and whether the art pipeline can be
-in-house at all.
-*Default: assume this is a side project competing with 20+ other repos, so every slice
-must be independently playable and nothing depends on a long unbroken run.*
-
 **F2. Art — you, me, asset packs, or commissioned?**
 The kit-of-parts approach was chosen partly because it's the only path that works without
 a dedicated artist.
@@ -207,10 +205,10 @@ props. No commissioned art before M1.*
 SimCity.
 *Default: pick at M0 completion; don't bikeshed it now.*
 
-**F4. What does "done" look like for the first milestone?**
-My proposal: **one city tile, one hour of play, the Why Panel working, three data layers,
-zoning that grows and abandons for reasons you can read on screen.** If that's fun, the
-rest is execution. If it isn't, the design is wrong and we've spent weeks, not a year.
+**F4. What does "done" look like for the first slice?**
+My proposal: **one city tile, the Why Panel working, three data layers, zoning that grows
+and abandons for reasons you can read on screen.** If that's fun, the rest is execution.
+If it isn't, the design is wrong and we find out at the cheapest possible moment.
 *Default: that.*
 
 **F5. Does this go on the Jarvis dashboard now or after M0?**
