@@ -139,9 +139,15 @@ The rule for this project: **traffic must be teachable.**
 
 Cities: Skylines II shipped knowingly broken and it defined the game's reputation
 permanently. Performance is a design constraint here, not a polish task:
-- Pick the target on day one (e.g. *200k population at 60fps and 10 sim-ticks/sec on a
-  mid-range 2023 laptop*) and write a synthetic benchmark that generates a fake city of
-  that size before any real content exists.
-- Run it in CI. A regression is a build failure, not a bug ticket.
+- Targets are **tiered** (full table in [TECH-STACK.md](TECH-STACK.md)):
+  **Tier 1** 512² / 200k pop / 60fps + 10 ticks/s is the M1 ship gate;
+  **Tier 2** 1024² / ~1M pop must stay reachable;
+  **Tier 3** 2048² / multi-million ("metropolis mode") may degrade to 30fps but must never
+  stall. Ship Tier 1, never foreclose Tier 3.
+- Write a synthetic city generator that can fill *any* tier with fake data **before any
+  real content exists**, and measure frame time and tick time against it.
+- Run it in CI. A regression is a build failure, not a bug ticket. Tier 1 must pass to
+  ship; Tier 2 is measured every build so we learn the day we break it.
 - The field-based sim is O(tiles), which is the whole reason to choose it — it doesn't
-  care how many citizens there are.
+  care how many citizens there are. What breaks first is the **tick budget** and the
+  **origin–destination matrix** (the one genuinely quadratic thing), not memory.

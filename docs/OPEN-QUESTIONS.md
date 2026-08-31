@@ -6,15 +6,20 @@ just say "defaults are fine," I can start from this document without another pas
 The ones marked **[BLOCKER]** change the architecture. Answer those first; the rest can
 be decided later without rework.
 
+> **Answered 2026-08-31:** A1 (commercial release intended), B1 (TS + three.js),
+> B2 (tiered targets, Tier 3 metropolis headroom), D1 (field-based confirmed).
+> Consequences written up in [TECH-STACK.md](TECH-STACK.md) and
+> [SIMULATION-MODEL.md](SIMULATION-MODEL.md). Still open: everything else.
+
 ---
 
 ## A. Intent & audience
 
-**A1. [BLOCKER] What is this, honestly?**
-A weekend R&D toy in the Jarvis tradition, a serious 1–2 year project you intend to
-finish, or something you'd eventually put on Steam?
-*Default: a real project built in vertical slices, no commercial commitment yet, with each
-slice playable and shippable on its own.*
+**A1. [BLOCKER] What is this, honestly?** — ✅ **ANSWERED: commercial release intended.**
+Built in vertical slices, each independently playable, but aimed at an actual paid release
+on Steam rather than a toy. This raises the bar on save-format stability, performance
+budgets, and mod support — all now reflected in TECH-STACK.md.
+*Still to decide later: price point, Early Access or not, and demo strategy.*
 
 **A2. Who's the player?**
 (a) You. (b) Lapsed SimCity 4 players who want the depth without the opacity. (c) People
@@ -53,15 +58,26 @@ Three realistic paths given your existing pipeline:
 | **Godot 4** | Free, good 3D, real desktop builds, Steam-ready, GDScript is fast to iterate in | New pipeline for you; not web-native (Godot web export is workable but not great for this) |
 | **Unity / Bevy / custom** | Ceiling | Cost or effort out of proportion to the project |
 
-*Default: TypeScript + three.js, orthographic renderer, simulation in a Web Worker over
-typed arrays, deployed to `citysim.dabrewer.dev` on your existing Pages pattern. It fits
-everything you already run, and the field-based sim is exactly the kind of workload that
-survives in a worker. Godot is the fallback if you decide desktop/Steam matters.*
+✅ **ANSWERED: TypeScript + three.js**, orthographic renderer, simulation in a Web Worker
+over typed arrays. Web is the development and demo target (deployed to
+`citysim.dabrewer.dev` on your existing Pages pattern); **Steam is the commercial target**,
+reached by wrapping the same codebase in **Electron** — bundled Chromium, not Tauri's OS
+webview, because Tauri only supports WebGPU behind an experimental flag and renders
+differently per platform. Full reasoning in [TECH-STACK.md](TECH-STACK.md).
 
-**B2. [BLOCKER] What's the target city size and target hardware?**
-This sets everything: grid size, memory layout, LOD strategy, whether WASM is needed.
-*Default: 512×512 tiles (~16km²) per city tile, 200k population, 60fps render and 10
-sim-ticks/sec on a mid-range 2023 laptop. Benchmark written before content.*
+*Consequence: the simulation must stay a pure typed-array module with no browser
+dependencies, so the host can be ported later if we ever hit a ceiling.*
+
+**B2. [BLOCKER] What's the target city size and target hardware?** — ✅ **ANSWERED: tiered.**
+- **Tier 1 (M1 ship gate):** 512² tiles (~16km²), 200k pop, 60fps + 10 ticks/s on a
+  mid-range 2023 laptop.
+- **Tier 2 (must remain reachable):** 1024² (~67km²), ~1M pop, same framerate.
+- **Tier 3 ("metropolis mode"):** 2048² (~268km² — ~2.5× Paris), multi-million pop,
+  30fps acceptable, graceful sim slowdown but never a stall.
+
+Ship Tier 1; never make a decision that forecloses Tier 3. Synthetic benchmark for all
+three tiers written *before* content and run in CI. See [TECH-STACK.md](TECH-STACK.md)
+for where this actually breaks first (tick budget and the OD matrix, not memory).
 
 **B3. Desktop, web, or mobile/tablet?**
 Touch changes the entire UI design (no hover, no right-click, no keyboard modifiers), so
@@ -110,12 +126,11 @@ UI honest about that.*
 
 ## D. Simulation philosophy
 
-**D1. [BLOCKER] Confirm: field-based sim, not agent-based.**
-This is the most consequential technical decision in the document. Field-based (SimCity
-1/4) is O(tiles), scales to huge cities, and is what made SC4 deep. Agent-based (SC2013,
-CS) is what produced both the fake-simulation scandal and the performance wall.
-*Default: field-based core, aggregate flow traffic, agents only as sampled visualization
-and for a small tracked subset if "follow a citizen" ships.*
+**D1. [BLOCKER] Confirm: field-based sim, not agent-based.** — ✅ **ANSWERED: field-based.**
+Three-layer hybrid: fields as the truth, aggregate flow assignment for traffic and
+utilities, sampled agents as an honestly-labelled visualization plus a few hundred
+genuinely persistent citizens for narrative and as a validation harness.
+Full explanation in [SIMULATION-MODEL.md](SIMULATION-MODEL.md).
 
 **D2. How deep does the economy go?**
 Options: (a) SimCity's abstract RCI demand, (b) RCI + real supply chains for industry
