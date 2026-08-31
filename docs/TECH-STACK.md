@@ -52,7 +52,8 @@ browser demo as the marketing funnel.
 
 ## 2. The desktop shell: Electron, not Tauri
 
-This corrects my earlier recommendation. Tauri produces far smaller binaries (~3–10MB vs
+Tauri is the default choice for wrapping a web app these days, and it's the wrong one
+here. It produces far smaller binaries (~3–10MB vs
 Electron's ~120–200MB) and uses less RAM, which is why it wins most desktop-app
 comparisons. But it uses **the OS's own webview** — WebKit on macOS, WebView2 on Windows,
 WebKitGTK on Linux — and for a 3D game that's disqualifying:
