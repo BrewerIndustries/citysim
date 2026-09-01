@@ -39,6 +39,8 @@ export interface Terrain3D {
 /** Max blocks drawn in one frame. Beyond this the far ones are dropped, not queued. */
 const MAX_BUILDINGS = 120_000;
 const MAX_ROADS = 120_000;
+/** A drag preview past this many tiles is a mistake, not a plan. */
+const MAX_PREVIEW = 40_000;
 
 export class View3D {
   readonly canvas: HTMLCanvasElement;
@@ -57,6 +59,7 @@ export class View3D {
   private readonly dummy = new THREE.Object3D();
   private readonly colour = new THREE.Color();
   private hover: THREE.Mesh;
+  private preview: THREE.InstancedMesh;
 
   constructor(canvas: HTMLCanvasElement, gridWidth: number, gridHeight: number) {
     this.canvas = canvas;
@@ -109,6 +112,17 @@ export class View3D {
     );
     this.hover.visible = false;
     this.scene.add(this.hover);
+
+    const pad = new THREE.BoxGeometry(CELL, 0.06, CELL);
+    this.preview = new THREE.InstancedMesh(
+      pad,
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 }),
+      MAX_PREVIEW,
+    );
+    this.preview.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.preview.count = 0;
+    this.preview.frustumCulled = false;
+    this.scene.add(this.preview);
   }
 
   dispose(): void { this.renderer.dispose(); }
@@ -198,8 +212,24 @@ export class View3D {
     attr.needsUpdate = true;
   }
 
+  /** Highlight the cells a line or rectangle drag would affect. */
+  setPreview(cells: number[]): void {
+    const n = Math.min(cells.length, MAX_PREVIEW);
+    for (let k = 0; k < n; k++) {
+      const i = cells[k];
+      const x = i % this.gridW;
+      const y = (i / this.gridW) | 0;
+      this.dummy.position.set(x * CELL, this.heightAt(i) + 0.08, y * CELL);
+      this.dummy.scale.set(1, 1, 1);
+      this.dummy.updateMatrix();
+      this.preview.setMatrixAt(k, this.dummy.matrix);
+    }
+    this.preview.count = n;
+    this.preview.instanceMatrix.needsUpdate = true;
+  }
+
   setHover(cell: { x: number; y: number } | null): void {
-    if (!cell) { this.hover.visible = false; return; }
+    if (!cell || this.preview.count > 0) { this.hover.visible = false; return; }
     const i = cell.y * this.gridW + cell.x;
     this.hover.position.set(cell.x * CELL, this.heightAt(i) + 0.06, cell.y * CELL);
     this.hover.visible = true;

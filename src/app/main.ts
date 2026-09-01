@@ -3,7 +3,10 @@ import { Camera } from './camera.ts';
 import { CityRenderer, type Overlay } from './render.ts';
 import { View3D } from './view3d.ts';
 import { LAYERS, RAMPS, buildLut } from './palette.ts';
-import { TOOLS, DENSITY_LABELS, lineCells, brushCells, anchorFor, type Tool } from './tools.ts';
+import {
+  TOOLS, DENSITY_LABELS, DRAW_MODES, lineCells, brushCells, rectCells, anchorFor, modesFor,
+  type Tool, type DrawMode,
+} from './tools.ts';
 import { REASON, REASON_TEXT, requiredDesirability } from '../sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { ZONE_LABEL, CIVIC_BY_ID, MAX_LEVEL } from '../sim/tiles.ts';
@@ -49,6 +52,15 @@ let snap: Snapshot | null = null;
 let tool: Tool = TOOLS[0];
 let density = 0;
 let brush = 3;
+let drawMode: DrawMode = 'pencil';
+/**
+ * Each kind of tool remembers its own draw mode, starting from what suits it — lines
+ * for roads, rectangles for zoning. Sharing one mode across every tool meant picking
+ * the road tool silently changed how zoning would behave.
+ */
+const modeByKind = new Map<string, DrawMode>();
+/** Cells a line/rectangle drag would affect, previewed until the button is released. */
+let preview: number[] = [];
 let layerIndex = -1;
 let overlay: Overlay | null = null;
 let hover: { x: number; y: number } | null = null;
@@ -115,6 +127,24 @@ function buildTools(): void {
       row.style.display = t === tool ? 'flex' : 'none';
       container!.appendChild(row);
     }
+
+    const { modes } = modesFor(t.kind);
+    if (modes.length) {
+      const row = document.createElement('div');
+      row.className = 'densities modes';
+      row.dataset.modesFor = t.id;
+      for (const m of DRAW_MODES) {
+        if (!modes.includes(m.mode)) continue;
+        const mb = document.createElement('button');
+        mb.textContent = m.label;
+        mb.title = m.hint;
+        mb.dataset.mode = m.mode;
+        mb.onclick = (e) => { e.stopPropagation(); modeByKind.set(t.kind, m.mode); selectTool(t); };
+        row.appendChild(mb);
+      }
+      row.style.display = t === tool ? 'flex' : 'none';
+      container!.appendChild(row);
+    }
   }
 }
 
@@ -143,10 +173,18 @@ function selectTool(t: Tool): void {
   for (const b of document.querySelectorAll<HTMLElement>('.tool')) {
     b.setAttribute('aria-pressed', String(b.dataset.id === t.id));
   }
-  for (const row of document.querySelectorAll<HTMLElement>('.densities')) {
+  for (const row of document.querySelectorAll<HTMLElement>('.densities:not(.modes)')) {
     row.style.display = row.dataset.for === t.id ? 'flex' : 'none';
     row.querySelectorAll('button').forEach((db, d) =>
       db.setAttribute('aria-pressed', String(d === density)));
+  }
+
+  const { modes, preferred } = modesFor(t.kind);
+  drawMode = modes.length ? (modeByKind.get(t.kind) ?? preferred) : 'pencil';
+  for (const row of document.querySelectorAll<HTMLElement>('.densities.modes')) {
+    row.style.display = row.dataset.modesFor === t.id ? 'flex' : 'none';
+    row.querySelectorAll('button').forEach((mb) =>
+      mb.setAttribute('aria-pressed', String(mb.dataset.mode === drawMode)));
   }
   const civicDef = t.civicId ? CIVIC_BY_ID.get(t.civicId) : null;
   brush = t.kind === 'zone' || t.kind === 'bulldoze' ? 3 : civicDef ? civicDef.size : 1;
@@ -412,6 +450,7 @@ let dragging = false;
 let panning = false;
 let spaceDown = false;
 let lastCell: { x: number; y: number } | null = null;
+let anchor: { x: number; y: number } | null = null;
 let lastPan = { x: 0, y: 0 };
 
 function viewSize(): [number, number] {
@@ -473,7 +512,9 @@ forEachCanvas((el) => el.addEventListener('pointerdown', (e) => {
   newStroke();
   dragging = true;
   lastCell = cell;
-  applyAt(cell);
+  anchor = cell;
+  if (drawMode === 'pencil' || tool.kind === 'inspect' || tool.kind === 'civic') applyAt(cell);
+  else preview = previewFor(cell);
 }));
 
 forEachCanvas((el) => el.addEventListener('pointermove', (e) => {
@@ -489,6 +530,14 @@ forEachCanvas((el) => el.addEventListener('pointermove', (e) => {
   hover = cell;
   if (!dragging || !cell || !lastCell) return;
   if (cell.x === lastCell.x && cell.y === lastCell.y) return;
+
+  if (drawMode !== 'pencil' && anchor) {
+    // Nothing is built until the button comes up, so the shape can be adjusted freely.
+    preview = previewFor(cell);
+    lastCell = cell;
+    return;
+  }
+
   if (tool.kind === 'road') {
     act({ kind: 'road', cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE) });
   } else if (tool.kind === 'removeroad') {
@@ -500,6 +549,9 @@ forEachCanvas((el) => el.addEventListener('pointermove', (e) => {
 }));
 
 const endDrag = () => {
+  if (dragging && preview.length) commitPreview();
+  preview = [];
+  anchor = null;
   if (dragging) post({ type: 'endstroke' });
   dragging = false;
   panning = false;
@@ -523,6 +575,28 @@ forEachCanvas((el) => el.addEventListener('wheel', (e) => {
     view3d?.cam.zoomBy(e.deltaY < 0 ? 1 : -1);
   }
 }, { passive: false }));
+
+/** The cells a line or rectangle drag would affect, from the anchor to `cell`. */
+function previewFor(cell: { x: number; y: number }): number[] {
+  if (!anchor) return [];
+  if (drawMode === 'rectangle') {
+    return rectCells(anchor.x, anchor.y, cell.x, cell.y, MAP_SIZE, MAP_SIZE);
+  }
+  return lineCells(anchor.x, anchor.y, cell.x, cell.y, MAP_SIZE);
+}
+
+/** Build whatever the preview is showing, as one undo step. */
+function commitPreview(): void {
+  const cells = preview;
+  if (!cells.length) return;
+  switch (tool.kind) {
+    case 'road': act({ kind: 'road', cells }); break;
+    case 'removeroad': act({ kind: 'removeroad', cells }); break;
+    case 'bulldoze': act({ kind: 'bulldoze', cells }); break;
+    case 'zone': act({ kind: 'zone', cells, zone: tool.zone!, density }); break;
+    default: break;
+  }
+}
 
 function applyAt(cell: { x: number; y: number }): void {
   const i = cell.y * MAP_SIZE + cell.x;
@@ -872,12 +946,13 @@ function frame(): void {
   // is a normal state, not an error. Render nothing rather than throwing every frame.
   if (snap && vw > 4 && vh > 4) {
     if (viewMode === 'plan') {
-      renderer.draw(ctx, vw, vh, snap, camera, overlay, hover, brush);
+      renderer.draw(ctx, vw, vh, snap, camera, overlay, hover, brush, preview);
     } else {
       const v = ensure3d();
       if (v) {
         v.update(snap, vw / vh);
         v.setHover(hover);
+        v.setPreview(preview);
         v.render(vw, vh);
       }
     }

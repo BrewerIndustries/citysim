@@ -68,6 +68,7 @@ export class CityRenderer {
     overlay: Overlay | null,
     hover: { x: number; y: number } | null,
     brush: number,
+    preview: number[] = [],
   ): void {
     const r = cam.viewRect(vw, vh);
     this.ensure(r.w, r.h);
@@ -141,7 +142,8 @@ export class CityRenderer {
 
     if (s >= 8) this.drawGrid(ctx, cam, r, vw, vh, s);
     if (s >= 4) this.drawDevelopedOutline(ctx, cam, r, snap, vw, vh, s);
-    if (hover) this.drawBrush(ctx, cam, hover, brush, vw, vh, s);
+    if (preview.length) this.drawPreview(ctx, cam, preview, vw, vh, s);
+    else if (hover) this.drawBrush(ctx, cam, hover, brush, vw, vh, s);
   }
 
   /**
@@ -202,6 +204,29 @@ export class CityRenderer {
       ctx.moveTo(0, p); ctx.lineTo(vw, p);
     }
     ctx.stroke();
+  }
+
+  /**
+   * The cells a line or rectangle drag is about to affect.
+   *
+   * Drawn as one filled path and one stroked path rather than per-cell calls, so a
+   * hundred-tile rectangle costs two draws instead of two hundred.
+   */
+  private drawPreview(
+    ctx: CanvasRenderingContext2D, cam: Camera, cells: number[],
+    vw: number, vh: number, s: number,
+  ): void {
+    const gw = this.gridWidth;
+    const path = new Path2D();
+    for (const i of cells) {
+      const p = cam.screenOf(i % gw, (i / gw) | 0, vw, vh);
+      path.rect(Math.round(p.x), Math.round(p.y), s, s);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fill(path);
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 1;
+    ctx.stroke(path);
   }
 
   private drawBrush(

@@ -68,6 +68,53 @@ function assignKeys(tools: Array<Omit<Tool, 'key'> & { key: string }>): Tool[] {
 
 export const DENSITY_LABELS = ['Low', 'Med', 'High'];
 
+/**
+ * How a drag is interpreted.
+ *
+ *   pencil     follows the cursor exactly — good for organic streets and touching up
+ *   line       an L-shaped run from where you pressed to where you are
+ *   rectangle  fills the whole box between press and release
+ *
+ * Roads default to lines and zoning to rectangles, because that is what each is almost
+ * always used for; pencil stays available for both.
+ */
+export type DrawMode = 'pencil' | 'line' | 'rectangle';
+
+export const DRAW_MODES: ReadonlyArray<{ mode: DrawMode; label: string; hint: string }> = [
+  { mode: 'pencil', label: 'Free', hint: 'Follow the cursor exactly' },
+  { mode: 'line', label: 'Line', hint: 'Straight run from press to release' },
+  { mode: 'rectangle', label: 'Rect', hint: 'Fill the box between press and release' },
+];
+
+/** Which modes make sense for a tool, and which it starts on. */
+export function modesFor(kind: ToolKind): { modes: DrawMode[]; preferred: DrawMode } {
+  switch (kind) {
+    case 'road':
+    case 'removeroad':
+      return { modes: ['line', 'pencil', 'rectangle'], preferred: 'line' };
+    case 'zone':
+    case 'bulldoze':
+      return { modes: ['rectangle', 'pencil', 'line'], preferred: 'rectangle' };
+    default:
+      return { modes: [], preferred: 'pencil' };
+  }
+}
+
+/** Every cell in the box between two corners, clipped to the map. */
+export function rectCells(
+  ax: number, ay: number, bx: number, by: number, width: number, height: number,
+): number[] {
+  const x0 = Math.max(0, Math.min(ax, bx));
+  const x1 = Math.min(width - 1, Math.max(ax, bx));
+  const y0 = Math.max(0, Math.min(ay, by));
+  const y1 = Math.min(height - 1, Math.max(ay, by));
+  const cells: number[] = [];
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) cells.push(y * width + x);
+  }
+  return cells;
+}
+
 /** Cells along a line from a to b, stepped as an L so roads stay axis-aligned. */
 export function lineCells(
   ax: number, ay: number, bx: number, by: number, width: number,
