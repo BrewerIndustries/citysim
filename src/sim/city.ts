@@ -655,16 +655,15 @@ export class City {
   }
 
   /**
-   * Lay a power line or a water pipe. Both may share a tile with a road — utilities run
-   * under the street, which is where they belong and how a real city is laid out.
+   * Lay a power line, a water pipe or a sewer. All three may share a tile with a road —
+   * utilities run under the street, which is where they belong and how a real city is
+   * laid out. Sewers and water pipes may only *cross* each other; see `crossingBlocker`.
    */
   buildUtility(i: number, kind: UtilityKind): boolean {
     const t = this.tiles;
     const plane = this.utilityPlane(kind);
     if (plane[i] || this.terrain.water[i]) return false;
-    // A sewer never shares a tile with the drinking supply, in either direction.
-    if (kind === 'sewer' && t.pipe[i]) return false;
-    if (kind === 'pipe' && t.sewer[i]) return false;
+    if (this.crossingBlocker(i, kind) >= 0) return false;
     const cost = kind === 'powerLine' ? LINE_COST : PIPE_COST;
     if (!this.canAfford(cost)) return false;
     this.history.touch(t, i);
@@ -690,12 +689,38 @@ export class City {
 
   /** Why a utility can't be laid here, for the interface to explain. */
   utilityBlockedBy(i: number, kind: UtilityKind): string | null {
-    const t = this.tiles;
     if (this.terrain.water[i]) return 'open water';
     if (this.utilityPlane(kind)[i]) return null;
-    if (kind === 'sewer' && t.pipe[i]) return 'a water pipe already runs here';
-    if (kind === 'pipe' && t.sewer[i]) return 'a sewer already runs here';
+    if (this.crossingBlocker(i, kind) >= 0) {
+      return kind === 'sewer'
+        ? 'a sewer can cross a water pipe but not run alongside it'
+        : 'a water pipe can cross a sewer but not run alongside it';
+    }
     return null;
+  }
+
+  /**
+   * Sewers and water mains may share a tile, but only where they genuinely cross: a
+   * shared tile is an intersection, never a length of shared trench. The rule that
+   * expresses that locally is simply that no two shared tiles may touch — one crossing
+   * is a crossing, two in a row is a sewer laid on top of the drinking supply.
+   *
+   * Returns the index of the neighbouring crossing that blocks this cell, or -1.
+   */
+  private crossingBlocker(i: number, kind: UtilityKind): number {
+    if (kind === 'powerLine') return -1;
+    const t = this.tiles;
+    const other = kind === 'sewer' ? t.pipe : t.sewer;
+    if (!other[i]) return -1; // not a crossing at all
+    const { width, height } = this.grid;
+    const x = i & (width - 1);
+    const y = i >>> this.grid.shift;
+    const shared = (n: number) => t.pipe[n] !== 0 && t.sewer[n] !== 0;
+    if (x > 0 && shared(i - 1)) return i - 1;
+    if (x < width - 1 && shared(i + 1)) return i + 1;
+    if (y > 0 && shared(i - width)) return i - width;
+    if (y < height - 1 && shared(i + width)) return i + width;
+    return -1;
   }
 
   private utilityPlane(kind: UtilityKind): Uint8Array {

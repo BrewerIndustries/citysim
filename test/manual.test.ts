@@ -173,7 +173,7 @@ test('the manual explains both utility networks', () => {
 
 test('the manual explains the sewer rule and the cleanup buildings', () => {
   const s = text(section('sewage'));
-  assert.match(s, /never share a tile with a water pipe/i);
+  assert.match(s, /may cross a water pipe, but never run alongside it/i);
   assert.ok(s.includes(String(SEPTIC_MAX_LEVEL)), 'should quote the real septic cap');
   for (const d of CIVIC_DEFS.filter((x) => x.sewage)) {
     assert.ok(s.includes(d.label), `sewage section omits ${d.label}`);

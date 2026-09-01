@@ -69,9 +69,9 @@ Network URLs on startup.)
    streets. Roads carry traffic, not electricity — the wires are yours to lay.
 2. **Draw roads** — drag to lay a line. Every plot must be within 3 tiles of one.
 3. **Run water and sewer** — a pump beside open water (or over an aquifer) feeds **pipes**;
-   a sewage outflow or treatment works drains **sewers**. Pipes and sewers may share a
-   street with a road, but never with each other. Everything needs power, including the
-   pump. Low-density housing gets by on septic; anything taller needs a sewer.
+   a sewage outflow or treatment works drains **sewers**. Pipes and sewers may each share
+   a street with a road, and may *cross* each other on a single tile, but neither can run
+   alongside the other. Everything needs power, including the pump. Low-density housing gets by on septic; anything taller needs a sewer.
 4. **Zone** residential, commercial and industrial beside the roads. Watch the RCI meter
    in the top bar for what the city actually wants.
 5. **Add services** — police suppresses crime, fire stations cut fire risk, parks, schools
@@ -125,7 +125,8 @@ space-drag to pan.
 - **Utility networks** — power, water and sewage are three networks you build, not side
   effects of paving. Each has its own layer view showing the conductor, the land it
   reaches, and in red whatever it is failing to serve. Pipes and sewers can run under a
-  road but never under each other, so the two have to be routed as separate systems.
+  road, and can cross each other at an intersection, but never run alongside each other —
+  the two have to be routed as separate systems that meet only where they must.
   Pumps and sewage works need open water beside them or a workable water table beneath,
   which the terrain decides — and they need power of their own, so a brownout takes the
   water supply with it. A source that isn't wired to anything says so by name rather than

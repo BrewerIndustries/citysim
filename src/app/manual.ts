@@ -283,10 +283,16 @@ export function buildManual(): ManualSection[] {
         <p>Sewage is the third network, and it works like the other two — a works with
         capacity, sewers to carry it, everything within <b>${UTILITY_REACH} tiles</b>
         connected. With one rule of its own:</p>
-        <p class="tip"><b>A sewer can never share a tile with a water pipe.</b> You do not
-        run a foul line alongside the drinking supply. It may share with a road or a power
-        line, so the usual answer is to run the sewer down the next street over, or the
-        far side of the block.</p>
+        <p class="tip"><b>A sewer may cross a water pipe, but never run alongside it.</b>
+        One shared tile is an intersection and is fine — that is how the sewer gets to the
+        other side of a street. Two shared tiles in a row would be a foul line laid along
+        the drinking supply, and the game refuses it. Sewers share with roads and power
+        lines without restriction, so the usual answer is to run the sewer down the next
+        street over and cross the water main wherever you need to.</p>
+        <p>Dragging a sewer along a piped street does not get you round this. The tiles
+        that land between crossings are refused, so what you are left with is a row of
+        isolated tiles that touch nothing and carry nothing — they show up dead in the
+        sewer layer. A network has to be continuous to be a network.</p>
         <h4>It is not a third gate</h4>
         <p>Unlike power and water, sewage does not stop a plot developing. A hamlet
         manages on septic tanks. What it does is <b>cap an unsewered plot at level

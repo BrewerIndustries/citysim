@@ -196,10 +196,11 @@ export class Tiles {
   /**
    * 1 if a sewer runs here.
    *
-   * A sewer may share a tile with a road or a power line, but NEVER with a water pipe —
-   * you do not run a foul line alongside the drinking supply. That exclusion is the
-   * whole planning problem sewers introduce: the obvious route down the main street is
-   * already taken.
+   * A sewer may share a tile with a road or a power line freely. With a water pipe it
+   * may only *cross*: one shared tile is an intersection, two adjacent shared tiles is a
+   * foul line laid alongside the drinking supply, and that is refused. That is the whole
+   * planning problem sewers introduce — the sewer may cut across the main street, but it
+   * cannot run down it.
    */
   readonly sewer: Uint8Array;
   /** Development level of the grown building, 0 = empty lot. */

@@ -20,20 +20,68 @@ function city(seed = FLAT_MAP): City {
   return c;
 }
 
-test('a sewer may not share a tile with a water pipe, in either direction', () => {
-  // The whole planning problem sewers introduce: the obvious route down the main street
-  // is already taken by the water main.
+test('a sewer may cross a water pipe on a single tile', () => {
+  // A crossing is how the sewer reaches the other side of a street. One shared tile is
+  // an intersection, and intersections are legal.
   const c = city();
   const i = c.grid.index(40, 40);
   assert.ok(c.buildUtility(i, 'pipe'));
-  assert.equal(c.buildUtility(i, 'sewer'), false, 'a sewer must not go on top of a pipe');
-  assert.equal(c.tiles.sewer[i], 0);
-  assert.match(c.utilityBlockedBy(i, 'sewer') ?? '', /water pipe/);
+  assert.ok(c.buildUtility(i, 'sewer'), 'a sewer must be able to cross a pipe');
+  assert.equal(c.tiles.pipe[i], 1);
+  assert.equal(c.tiles.sewer[i], 1);
+  assert.equal(c.utilityBlockedBy(i, 'sewer'), null);
 
+  // And in the other direction: a pipe may cross an existing sewer.
   const j = c.grid.index(50, 50);
   assert.ok(c.buildUtility(j, 'sewer'));
-  assert.equal(c.buildUtility(j, 'pipe'), false, 'and a pipe must not go on top of a sewer');
-  assert.match(c.utilityBlockedBy(j, 'pipe') ?? '', /sewer/);
+  assert.ok(c.buildUtility(j, 'pipe'), 'a pipe must be able to cross a sewer');
+});
+
+test('a sewer may not run alongside a water pipe for two tiles', () => {
+  // Two shared tiles in a row is not a crossing, it is a foul line laid along the
+  // drinking supply. The rule is local: no two shared tiles may touch.
+  const c = city();
+  const a = c.grid.index(40, 40);
+  const b = c.grid.index(41, 40);
+  assert.ok(c.buildUtility(a, 'pipe'));
+  assert.ok(c.buildUtility(b, 'pipe'));
+  assert.ok(c.buildUtility(a, 'sewer'), 'the first crossing is fine');
+  assert.equal(c.buildUtility(b, 'sewer'), false, 'the second in a row is an overlay');
+  assert.equal(c.tiles.sewer[b], 0);
+  assert.match(c.utilityBlockedBy(b, 'sewer') ?? '', /cross .* not run alongside/i);
+});
+
+test('the no-touching rule applies vertically as well as horizontally', () => {
+  const c = city();
+  const a = c.grid.index(40, 40);
+  const below = c.grid.index(40, 41);
+  assert.ok(c.buildUtility(a, 'pipe'));
+  assert.ok(c.buildUtility(below, 'pipe'));
+  assert.ok(c.buildUtility(a, 'sewer'));
+  assert.equal(c.buildUtility(below, 'sewer'), false, 'a vertical overlay is still an overlay');
+});
+
+test('crossings may repeat as long as they never touch', () => {
+  // A sewer running the length of a pipe on every other tile would be an overlay in
+  // spirit; on alternating tiles it is a sequence of genuine crossings, which is legal.
+  const c = city();
+  for (let x = 40; x < 50; x++) assert.ok(c.buildUtility(c.grid.index(x, 40), 'pipe'));
+  for (let x = 40; x < 50; x += 2) {
+    assert.ok(c.buildUtility(c.grid.index(x, 40), 'sewer'), `crossing at ${x}`);
+  }
+  for (let x = 41; x < 50; x += 2) {
+    assert.equal(c.buildUtility(c.grid.index(x, 40), 'sewer'), false, `overlay at ${x}`);
+  }
+});
+
+test('a crossing costs nothing extra and is removable on its own', () => {
+  const c = city();
+  const i = c.grid.index(40, 40);
+  assert.ok(c.buildUtility(i, 'pipe'));
+  assert.ok(c.buildUtility(i, 'sewer'));
+  assert.ok(c.removeUtility(i, 'sewer'));
+  assert.equal(c.tiles.sewer[i], 0);
+  assert.equal(c.tiles.pipe[i], 1, 'removing the sewer must leave the pipe alone');
 });
 
 test('a sewer shares happily with a road and a power line', () => {
