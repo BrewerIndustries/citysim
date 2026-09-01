@@ -22,12 +22,13 @@ export const ZONE_LABEL: Record<number, string> = {
 /** Civic buildings the player plops directly. id 0 means none. */
 export const CIVIC = {
   NONE: 0,
-  ROAD: 0, // roads live in their own array
   POLICE: 1,
   FIRE: 2,
   SCHOOL: 3,
   PARK: 4,
   POWER: 5,
+  BUS: 6,
+  METRO: 7,
 } as const;
 
 export interface CivicDef {
@@ -58,6 +59,10 @@ export const CIVIC_DEFS: CivicDef[] = [
   // permanent deficit and went bankrupt before it could grow into the bill.
   { id: 5, key: 'power', label: 'Coal power plant', cost: 2200, upkeep: 200, size: 4,
     supply: 3000, colour: '#8a8f9c' },
+  { id: 6, key: 'bus', label: 'Bus stop', cost: 120, upkeep: 18, size: 1,
+    source: { field: 'transitSrc', value: 65 }, colour: '#b06fc8' },
+  { id: 7, key: 'metro', label: 'Metro station', cost: 950, upkeep: 90, size: 2,
+    source: { field: 'transitSrc', value: 185 }, colour: '#8a5ad0' },
 ];
 
 export const CIVIC_BY_ID = new Map(CIVIC_DEFS.map((d) => [d.id, d]));

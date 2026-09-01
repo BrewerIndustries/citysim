@@ -17,6 +17,9 @@ export interface Snapshot {
   tax: { r: number; c: number; i: number };
   messages: string[];
   simMs: number;
+  firesEnabled: boolean;
+  firesTotal: number;
+  tilesLostToFire: number;
   zone: Uint8Array;
   density: Uint8Array;
   road: Uint8Array;
@@ -46,6 +49,7 @@ export type ToWorker =
   | { type: 'layer'; layer: string | null }
   | { type: 'inspect'; index: number }
   | { type: 'tax'; tax: { r: number; c: number; i: number } }
+  | { type: 'options'; firesEnabled: boolean }
   | { type: 'act'; action: Action };
 
 export type Action =

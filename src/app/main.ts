@@ -146,6 +146,11 @@ function setLayer(i: number): void {
   }
 }
 
+function buildOptions(): void {
+  const fires = $<HTMLInputElement>('opt-fires');
+  fires.onchange = () => post({ type: 'options', firesEnabled: fires.checked });
+}
+
 function buildTaxes(): void {
   const el = $('taxes');
   el.innerHTML = '';
@@ -375,6 +380,10 @@ function updateHud(s: Snapshot): void {
     `<dt>${k}</dt><dd class="${n >= 3 || (n === 5 && l.net < 0) ? (n === 5 && l.net >= 0 ? '' : 'neg') : ''}">${v}</dd>`,
   ).join('');
 
+  $('fire-note').textContent = s.firesTotal === 0
+    ? (s.firesEnabled ? 'No fires yet.' : 'Fires are off.')
+    : `${s.firesTotal} fire${s.firesTotal === 1 ? '' : 's'}, ${s.tilesLostToFire} buildings lost.`;
+
   const ticker = $('ticker');
   ticker.innerHTML = s.messages.slice(0, 3).map((m) => `<div>${m}</div>`).join('');
 }
@@ -511,6 +520,7 @@ buildTools();
 buildManualUi();
 buildSpeeds();
 buildLayers();
+buildOptions();
 buildTaxes();
 fit();
 post({ type: 'init', size: MAP_SIZE, seed: 1 });

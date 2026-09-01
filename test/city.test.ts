@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { City, MESSAGE_TTL } from '../src/sim/city.ts';
-import { ZONE_RES, ZONE_COM, ZONE_IND } from '../src/sim/tiles.ts';
+import { ZONE_RES, ZONE_COM, ZONE_IND, CIVIC_DEFS } from '../src/sim/tiles.ts';
 import { REASON, requiredDesirability } from '../src/sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../src/sim/sim.ts';
 import { anchorFor } from '../src/app/tools.ts';
@@ -188,6 +188,7 @@ test('removing a road leaves zoning and buildings intact', () => {
 
 test('ticker messages expire instead of sticking forever', () => {
   const c = buildTestCity();
+  c.firesEnabled = false; // fires post their own messages; isolate what's under test
   c.pushMessage('transient complaint');
   assert.deepEqual(c.activeMessages(), ['transient complaint']);
   for (let t = 0; t < MESSAGE_TTL + 5; t++) c.step();
@@ -250,4 +251,64 @@ test('parallel roads 2*ROAD_REACH+1 apart leave no unserved land', () => {
     }
   }
   assert.ok(unserved > 0, 'spacing one wider than ideal should strand some land');
+});
+
+test('transit buildings raise transit access and land value', () => {
+  // Regression: transitAccess is the second-strongest positive term in land value, but
+  // nothing buildable wrote transitSrc — only the benchmark fixture did. Transit stops
+  // existed in the field model and nowhere in the game.
+  const c = new City(128, 1);
+  const g = c.grid;
+  for (let x = 20; x < 100; x++) c.buildRoad(g.index(x, 40));
+  c.placeCivic(g.index(20, 20), 5);
+  for (let t = 0; t < 20; t++) c.step();
+  const probe = g.index(60, 42);
+  const before = c.fields.get('landValue')[probe];
+  assert.equal(c.fields.get('transitAccess')[probe], 0, 'no transit access before a stop exists');
+
+  const metro = CIVIC_DEFS.find((d) => d.key === 'metro')!;
+  assert.ok(c.placeCivic(g.index(60, 43), metro.id).ok);
+  for (let t = 0; t < 20; t++) c.step();
+
+  assert.ok(c.fields.get('transitAccess')[probe] > 0, 'a metro station should create access');
+  assert.ok(
+    c.fields.get('landValue')[probe] > before,
+    `land value should rise near transit: ${before.toFixed(1)} -> ${c.fields.get('landValue')[probe].toFixed(1)}`,
+  );
+});
+
+test('fire coverage suppresses fire risk', () => {
+  // Regression: fireCover was consumed by NOTHING. Fire stations cost $100/mo and had
+  // no effect on anything in the simulation.
+  const c = buildTestCity();
+  c.firesEnabled = false; // measuring risk, not rolling for ignition
+  for (let t = 0; t < 200; t++) c.step();
+
+  const risk = c.fields.get('fireRisk');
+  const developed: number[] = [];
+  for (let i = 0; i < c.tiles.level.length; i++) if (c.tiles.level[i] > 0) developed.push(i);
+  assert.ok(developed.length > 50);
+  const exposedBefore = developed.reduce((s, i) => s + risk[i], 0) / developed.length;
+  assert.ok(exposedBefore > 0, 'developed buildings should carry fire risk');
+
+  // Blanket the city in fire stations and the risk must fall sharply.
+  const fire = CIVIC_DEFS.find((d) => d.key === 'fire')!;
+  c.funds = 1_000_000;
+  for (let x = 22; x < 56; x += 6) c.placeCivic(c.grid.index(x, 34), fire.id);
+  for (let t = 0; t < 40; t++) c.step();
+  const after = developed.reduce((s, i) => s + risk[i], 0) / developed.length;
+  assert.ok(after < exposedBefore * 0.5, `cover should cut risk: ${exposedBefore.toFixed(1)} -> ${after.toFixed(1)}`);
+});
+
+test('fires can be switched off entirely', () => {
+  const c = buildTestCity();
+  c.firesEnabled = false;
+  for (let t = 0; t < 1500; t++) c.step();
+  assert.equal(c.firesTotal, 0, 'no fires should occur while disabled');
+});
+
+test('an unprotected city does eventually burn, a covered one much less', () => {
+  const exposed = buildTestCity();
+  for (let t = 0; t < 6000; t++) exposed.step();
+  assert.ok(exposed.firesTotal > 0, 'an uncovered city should see fires over time');
 });

@@ -33,6 +33,9 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     case 'tax':
       if (city) city.tax = msg.tax;
       break;
+    case 'options':
+      if (city) city.firesEnabled = msg.firesEnabled;
+      break;
     case 'inspect':
       if (city) self.postMessage({ type: 'inspect', cell: city.inspect(msg.index) });
       break;
@@ -84,6 +87,9 @@ function loop(): void {
     demand: c.demand, stats: c.stats, power: c.power, ledger: c.ledger, tax: c.tax,
     messages: c.activeMessages(3),
     simMs,
+    firesEnabled: c.firesEnabled,
+    firesTotal: c.firesTotal,
+    tilesLostToFire: c.tilesLostToFire,
     zone: new Uint8Array(t.zone),
     density: new Uint8Array(t.density),
     road: new Uint8Array(t.road),

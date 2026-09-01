@@ -37,6 +37,7 @@ export const FIELD_NAMES = [
   'desirabilityR',
   'desirabilityC',
   'desirabilityI',
+  'fireRisk',
 ] as const;
 
 export type FieldName = (typeof FIELD_NAMES)[number];

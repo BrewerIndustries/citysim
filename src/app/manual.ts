@@ -197,6 +197,41 @@ export function buildManual(): ManualSection[] {
         hundred people cannot carry a plant plus three services; grow the tax base first.</p>`,
     },
     {
+      id: 'transit',
+      title: 'Transit',
+      html: `
+        <p>Transit access is the <b>second strongest positive influence on land value</b>
+        (weight ${LAND_VALUE_TERMS.find((x) => x.field === 'transitAccess')!.weight.toFixed(2)}),
+        behind only parks, and residents and commerce both want it. A stop lifts the whole
+        neighbourhood around it, not just the tile it sits on.</p>
+        ${table(['Building', 'Cost', 'Upkeep', 'Size', 'Reach'],
+          CIVIC_DEFS.filter((d) => d.source?.field === 'transitSrc').map((d) => [
+            d.label, money(d.cost), money(d.upkeep) + ' / mo', `${d.size}×${d.size}`,
+            d.key === 'metro' ? 'Wide' : 'Local',
+          ]))}
+        <p>Bus stops are cheap enough to scatter through a residential district. A metro
+        station costs more but pushes access much further, which is what lets an inner
+        district reach the desirability needed for high-density towers.</p>
+        <p class="tip">Transit does not yet move anyone — it raises access and land value.
+        Actual passenger flow is a later addition.</p>`,
+    },
+    {
+      id: 'fire',
+      title: 'Fire',
+      html: `
+        <p>Developed tiles carry <b>fire risk</b>, which grows with building level and
+        density. Fire stations cut it by up to <b>92%</b> where their coverage is complete.</p>
+        <p>When a fire starts it levels the building and can spread to neighbouring
+        developed tiles — again resisted by their fire coverage. A single fire will not
+        consume more than a couple of dozen buildings.</p>
+        <p>Fire is meant to be <b>preventable, not arbitrary</b>. Turn on the
+        <b>Fire risk</b> data layer to see exactly where you are exposed before anything
+        burns; the bright areas are the ones without cover. Every fire is reported in the
+        ticker with its location.</p>
+        <p>If you would rather build without the risk, switch <b>Fires</b> off in the
+        Options panel at any time.</p>`,
+    },
+    {
       id: 'economy',
       title: 'Money & taxes',
       html: `
@@ -271,10 +306,12 @@ function reasonAdvice(text: string): string {
 function serviceEffect(key: string): string {
   switch (key) {
     case 'police': return 'Suppresses crime nearby, and raises land value a little';
-    case 'fire': return 'Fire cover across the surrounding area';
+    case 'fire': return 'Cuts fire risk nearby by up to 92%. Without it, buildings burn down';
     case 'school': return 'Raises land value strongly; a long-term driver of a wealthier city';
     case 'park': return 'Raises land value nearby — the cheapest way to lift a neighbourhood';
     case 'power': return 'Supplies electricity to the road network. Pollutes heavily';
+    case 'bus': return 'Transit access nearby — cheap, and a strong lift to land value';
+    case 'metro': return 'Transit access over a much wider area than a bus stop';
     default: return '';
   }
 }
@@ -287,10 +324,11 @@ function layerHint(field: string): string {
     desirabilityI: 'How much industry wants each tile',
     pollution: 'Mostly from industry and power plants. Poisons residential desirability',
     crime: 'Rises with density, falls sharply under police coverage',
+    fireRisk: 'Where a fire is likely to start. Driven by building size and lack of fire cover',
     policeCover: 'Reach of your police stations',
     fireCover: 'Reach of your fire stations',
     schoolCover: 'Reach of your schools',
-    transitAccess: 'Reach of transit stops (not yet buildable)',
+    transitAccess: 'Reach of your bus stops and metro stations',
     amenityAccess: 'Reach of parks and other amenities',
     jobAccess: 'How many jobs are reachable from each tile',
     popR: 'Raw residents per tile',

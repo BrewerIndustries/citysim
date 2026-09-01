@@ -3,6 +3,7 @@
  * that ties them together. This is the object the game loop drives.
  */
 import { Grid } from './grid.ts';
+import { Rng } from './rng.ts';
 import { Fields } from './fields.ts';
 import { Simulation } from './sim.ts';
 import { Tiles, CIVIC_BY_ID, CIVIC_DEFS, ZONE_RES, ZONE_COM, ZONE_IND, MAX_LEVEL } from './tiles.ts';
@@ -10,6 +11,7 @@ import { recomputeRoadDistance, ROAD_REACH } from './roads.ts';
 import { distributePower, type PowerReport } from './power.ts';
 import { stepGrowth, requiredDesirability, type GrowthStats } from './growth.ts';
 import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
+import { updateFireRisk, stepFires } from './fire.ts';
 
 export const TICKS_PER_MONTH = 8;
 export const ROAD_COST = 10;
@@ -51,10 +53,16 @@ export class City {
   power: PowerReport = { supply: 0, demand: 0, litCells: 0, unservedCells: 0, brownout: false };
   ledger: Ledger = { taxR: 0, taxC: 0, taxI: 0, upkeepCivic: 0, upkeepRoads: 0, net: 0 };
   bankrupt = false;
+  /** Disasters can be switched off; some players want a pure builder. */
+  firesEnabled = true;
+  firesTotal = 0;
+  tilesLostToFire = 0;
   messages: Array<{ text: string; tick: number }> = [];
 
   private roadsDirty = true;
   private civicsDirty = true;
+  /** Fires draw from their own stream so toggling them can't shift the rest of the sim. */
+  private readonly rngFire: Rng;
   private readonly queue: Int32Array;
   private readonly seen: Uint8Array;
   private tickCount = 0;
@@ -65,6 +73,7 @@ export class City {
     this.fields = this.sim.fields;
     this.tiles = new Tiles(this.grid);
     this.reason = new Uint8Array(this.grid.size);
+    this.rngFire = new Rng(seed ^ 0x5bf03635);
     this.queue = new Int32Array(this.grid.size);
     this.seen = new Uint8Array(this.grid.size);
   }
@@ -90,6 +99,19 @@ export class City {
     this.stats = stepGrowth(
       this.grid, this.tiles, this.fields, this.demand, this.tickCount, this.reason,
     );
+    updateFireRisk(this.fields, this.tiles);
+    if (this.firesEnabled) {
+      for (const f of stepFires(this.grid, this.fields, this.tiles, this.rngFire, this.stats.developedCells)) {
+        this.firesTotal++;
+        this.tilesLostToFire += f.burned;
+        this.pushMessage(
+          f.burned > 1
+            ? `Fire at ${f.x}, ${f.y} — ${f.burned} buildings lost. Check fire coverage.`
+            : `Fire at ${f.x}, ${f.y}. Check fire coverage.`,
+        );
+      }
+    }
+
     this.demand = computeDemand(
       {
         population: this.stats.population,
