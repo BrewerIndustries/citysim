@@ -10,9 +10,11 @@ name: Deploy to GitHub Pages
 # This is the free browser build: the demo and the dev target. The paid product
 # ships to Steam via Electron (docs/TECH-STACK.md).
 
+# DISABLED on push: GitHub Pages is not available for a private repo on the free plan
+# (the API returns 422 "Your current plan does not support GitHub Pages"). Re-enable the
+# push trigger when the repo goes public or the account upgrades; until then the web
+# demo ships via itch.io (.github/workflows/itch.yml).
 on:
-  push:
-    branches: [dev]
   workflow_dispatch:
 
 permissions:
