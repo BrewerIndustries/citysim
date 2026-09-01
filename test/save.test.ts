@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { City } from '../src/sim/city.ts';
 import { serialize, deserialize, SAVE_VERSION } from '../src/sim/save.ts';
 import { ZONE_RES, ZONE_COM, CIVIC_DEFS } from '../src/sim/tiles.ts';
 
 function played(): City {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   const g = c.grid;
   for (let x = 8; x < 110; x++) c.buildRoad(g.index(x, 40));
   for (let y = 30; y < 40; y++) c.buildRoad(g.index(12, y));
@@ -86,7 +87,7 @@ test('corrupt and future saves are rejected, not silently mangled', () => {
 });
 
 test('every civic building survives a round trip', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   let x = 4;
   for (const def of CIVIC_DEFS) {
     assert.ok(c.placeCivic(c.grid.index(x, 4), def.id).ok, `could not place ${def.label}`);

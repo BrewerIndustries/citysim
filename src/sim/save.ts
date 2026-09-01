@@ -14,7 +14,7 @@ import { City } from './city.ts';
 import { Tiles } from './tiles.ts';
 
 const MAGIC = 0x4354534d; // "CTSM"
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 /** Planes written to disk, in order. Derived planes are deliberately absent. */
 const PLANES: Array<keyof Tiles & string> = [
@@ -96,6 +96,9 @@ export function serialize(city: City): Uint8Array {
   w.u32(MAGIC);
   w.u16(SAVE_VERSION);
   w.u16(city.grid.width);
+  // Terrain is generated, not authored, so only its seed is stored — that's the
+  // difference between a ~1KB save and a 70KB one.
+  w.u32(city.mapSeed);
   w.f64(city.funds);
   w.u8(city.tax.r); w.u8(city.tax.c); w.u8(city.tax.i);
   w.u8(city.month);
@@ -125,7 +128,9 @@ export function deserialize(bytes: Uint8Array): LoadResult {
     throw new Error(`save is from a newer version (${version} > ${SAVE_VERSION})`);
   }
   const size = r.u16();
-  const city = new City(size, 1);
+  // v1 saves predate terrain; they load onto the default map.
+  const mapSeed = version >= 2 ? r.u32() : 1;
+  const city = new City(size, 1, mapSeed);
   city.funds = r.f64();
   city.tax = { r: r.u8(), c: r.u8(), i: r.u8() };
   city.month = r.u8();

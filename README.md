@@ -105,11 +105,14 @@ space-drag to pan.
   A played city serialises to about a kilobyte.
 - **History graph** — monthly series for population, jobs, funds, net, land value and
   pollution, each scaled to its own range.
+- **Terrain** — every new city gets a generated map with rivers and lakes. Water can't be
+  built on, and the waterfront is an amenity, so the coastline shapes where the city wants
+  to grow. Stored as a seed, not a height map, which keeps saves at ~1 KB.
 - **Benchmark harness** — synthetic city generator for any tier, written before any
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 61 tests
+npm test          # 70 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { City, MESSAGE_TTL, TICKS_PER_MONTH } from '../src/sim/city.ts';
 import { SERIES, HISTORY_LIMIT } from '../src/sim/history-series.ts';
 import { ZONE_RES, ZONE_COM, ZONE_IND, CIVIC_DEFS } from '../src/sim/tiles.ts';
@@ -10,7 +11,7 @@ import { ROAD_REACH } from '../src/sim/roads.ts';
 
 /** A small city with power, a road spine and zoning either side of it. */
 function buildTestCity(size = 128): City {
-  const c = new City(size, 1);
+  const c = new City(size, 1, FLAT_MAP);
   const g = c.grid;
   for (let x = 8; x < 110; x++) c.buildRoad(g.index(x, 40));
   for (let y = 30; y < 40; y++) c.buildRoad(g.index(12, y));
@@ -49,7 +50,7 @@ test('decline and growth thresholds do not overlap', () => {
 });
 
 test('no road means no development, and the reason says so', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   const g = c.grid;
   c.placeCivic(g.index(10, 10), 5);
   for (let y = 60; y < 64; y++) for (let x = 60; x < 64; x++) c.paintZone(g.index(x, y), ZONE_RES, 0);
@@ -61,7 +62,7 @@ test('no road means no development, and the reason says so', () => {
 test('power reaches as far as road access does', () => {
   // Regression: power used to spread only to cells directly ADJACENT to a road, while
   // road access allowed 3 cells, so two thirds of every zoned block was undevelopable.
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   const g = c.grid;
   for (let x = 8; x < 100; x++) c.buildRoad(g.index(x, 40));
   for (let y = 30; y < 40; y++) c.buildRoad(g.index(12, y));
@@ -84,7 +85,7 @@ test('cutting the road supply strands the grid', () => {
 });
 
 test('bulldozing a civic building removes its whole footprint', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   const g = c.grid;
   c.placeCivic(g.index(20, 20), 5); // 4x4
   let occupied = 0;
@@ -97,7 +98,7 @@ test('bulldozing a civic building removes its whole footprint', () => {
 });
 
 test('civic buildings cannot overlap and refunds are not given for failures', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   const g = c.grid;
   assert.ok(c.placeCivic(g.index(20, 20), 5).ok);
   const funds = c.funds;
@@ -206,7 +207,7 @@ test('a centred footprint anchors where the preview is drawn', () => {
     assert.equal(a.y, 50 - half, `size ${size} anchor y`);
   }
   // And placing at that anchor must occupy the previewed square.
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   const a = anchorFor(60, 60, 4);
   assert.ok(c.placeCivic(c.grid.index(a.x, a.y), 5).ok);
   for (let y = 59; y <= 62; y++) {
@@ -221,7 +222,7 @@ test('parallel roads 2*ROAD_REACH+1 apart leave no unserved land', () => {
   // measured rather than asserted in prose. A road serves ROAD_REACH tiles each side,
   // so roads 2*ROAD_REACH+1 apart give contiguous coverage with nothing wasted.
   const ideal = 2 * ROAD_REACH + 1;
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   const g = c.grid;
   for (let y = 10; y < 118; y++) {
     c.buildRoad(g.index(40, y));
@@ -239,7 +240,7 @@ test('parallel roads 2*ROAD_REACH+1 apart leave no unserved land', () => {
 
   // One tile further apart and a dead strip appears — which is the mistake the manual
   // is warning against.
-  const d = new City(128, 1);
+  const d = new City(128, 1, FLAT_MAP);
   for (let y = 10; y < 118; y++) {
     d.buildRoad(d.grid.index(40, y));
     d.buildRoad(d.grid.index(41 + ideal, y));
@@ -258,7 +259,7 @@ test('transit buildings raise transit access and land value', () => {
   // Regression: transitAccess is the second-strongest positive term in land value, but
   // nothing buildable wrote transitSrc — only the benchmark fixture did. Transit stops
   // existed in the field model and nowhere in the game.
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   const g = c.grid;
   for (let x = 20; x < 100; x++) c.buildRoad(g.index(x, 40));
   c.placeCivic(g.index(20, 20), 5);

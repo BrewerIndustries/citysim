@@ -10,6 +10,7 @@ import { buildManual, type ManualSection } from './manual.ts';
 import { writeSlot, readSlot, describeSlot, clearSlot } from './storage.ts';
 import { Chart } from './chart.ts';
 import { AUTOSAVE_MONTHS } from './autosave.ts';
+import { FLAT_MAP } from '../sim/terrain.ts';
 import { SERIES, type SeriesData, type SeriesKey } from '../sim/history-series.ts';
 import type { FromWorker, Snapshot, ToWorker, Action } from './protocol.ts';
 
@@ -205,8 +206,11 @@ function buildSaveUi(): void {
     if (!confirm('Start a new city? Anything unsaved is lost.')) return;
     clearSlot('auto');
     lastAutosaveMonth = -1;
-    post({ type: 'new', size: MAP_SIZE, seed: 1 });
-    note('Started a new city.');
+    // A fresh map each time, so New actually means a new place.
+    const flat = $<HTMLInputElement>('opt-flat').checked;
+    const mapSeed = flat ? FLAT_MAP : ((Math.random() * 0x7ffffffe) | 0) + 1;
+    post({ type: 'new', size: MAP_SIZE, seed: 1, mapSeed });
+    note(flat ? 'Started a new city on a flat map.' : 'Started a new city on a new map.');
   };
   refreshSaveNote();
 }
@@ -598,6 +602,7 @@ worker.onmessage = (e: MessageEvent<FromWorker>) => {
   if (msg.type === 'ready') {
     camera = new Camera(msg.width, msg.height);
     renderer = new CityRenderer(msg.width);
+    renderer.setTerrain(msg.water, msg.shore, msg.terrainHeight);
     fit();
   } else if (msg.type === 'frame') {
     snap = msg;

@@ -41,6 +41,10 @@ export interface ReadyMsg {
   type: 'ready';
   width: number;
   height: number;
+  /** Terrain never changes during play, so it's sent once rather than every frame. */
+  water: Uint8Array;
+  shore: Uint8Array;
+  terrainHeight: Uint8Array;
 }
 
 export interface InspectMsg {
@@ -62,7 +66,7 @@ export type ToWorker =
   | { type: 'options'; firesEnabled: boolean }
   | { type: 'save'; slot: string }
   | { type: 'load'; slot: string; bytes: Uint8Array }
-  | { type: 'new'; size: number; seed: number }
+  | { type: 'new'; size: number; seed: number; mapSeed: number }
   | { type: 'act'; action: Action; strokeId: string; label: string }
   | { type: 'endstroke' }
   | { type: 'undo' }

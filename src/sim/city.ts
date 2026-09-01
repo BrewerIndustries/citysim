@@ -13,6 +13,7 @@ import { stepGrowth, tallyCity, requiredDesirability, type GrowthStats } from '.
 import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
 import { updateFireRisk, stepFires } from './fire.ts';
 import { History } from './history.ts';
+import { Terrain } from './terrain.ts';
 import { emptySeries, pushSample, type SeriesData } from './history-series.ts';
 
 export const TICKS_PER_MONTH = 8;
@@ -24,6 +25,8 @@ export const BULLDOZE_COST = 4;
 export const ROAD_REMOVE_COST = 2;
 /** Ticks a ticker message stays on screen before it expires. */
 export const MESSAGE_TTL = 220;
+/** Amenity value of a waterfront tile. Below a park's, but it runs the whole coast. */
+export const SHORE_AMENITY = 48;
 
 export interface Ledger {
   taxR: number;
@@ -41,6 +44,8 @@ export class City {
   readonly tiles: Tiles;
   /** Per-cell growth reason code — the data behind the Why Panel. */
   readonly reason: Uint8Array;
+  readonly terrain: Terrain;
+  readonly mapSeed: number;
   readonly history = new History();
   /** Monthly time series behind the History graph. */
   series: SeriesData = emptySeries();
@@ -72,13 +77,15 @@ export class City {
   private readonly seen: Uint8Array;
   private tickCount = 0;
 
-  constructor(size: number, seed = 1) {
+  constructor(size: number, seed = 1, mapSeed = seed) {
     this.sim = new Simulation({ width: size, height: size, seed });
+    this.mapSeed = mapSeed;
     this.grid = this.sim.grid;
     this.fields = this.sim.fields;
     this.tiles = new Tiles(this.grid);
     this.reason = new Uint8Array(this.grid.size);
     this.rngFire = new Rng(seed ^ 0x5bf03635);
+    this.terrain = new Terrain(this.grid, mapSeed);
     this.queue = new Int32Array(this.grid.size);
     this.seen = new Uint8Array(this.grid.size);
   }
@@ -272,11 +279,20 @@ export class City {
     }
   }
 
-  /** Civic buildings write into their coverage source fields. Only on change. */
+  /**
+   * Civic buildings write into their coverage source fields. Only on change.
+   *
+   * The waterfront is folded in here as an amenity rather than given its own field and
+   * diffusion pass — "being by the water is nice" is exactly what the amenity field
+   * already means, and it costs nothing extra per tick.
+   */
   private writeCivicSources(): void {
     for (const def of CIVIC_DEFS) {
       if (def.source) this.fields.get(def.source.field as never).fill(0);
     }
+    const amenity = this.fields.get('amenity');
+    const shore = this.terrain.shore;
+    for (let i = 0; i < shore.length; i++) if (shore[i]) amenity[i] = SHORE_AMENITY;
     const { civic, civicAnchor } = this.tiles;
     for (let i = 0; i < civic.length; i++) {
       if (!civicAnchor[i]) continue;
@@ -329,7 +345,7 @@ export class City {
 
   buildRoad(i: number): boolean {
     const t = this.tiles;
-    if (t.road[i] || t.civic[i]) return false;
+    if (t.road[i] || t.civic[i] || this.terrain.water[i]) return false;
     if (!this.canAfford(ROAD_COST)) return false;
     this.history.touch(t, i);
     this.spend(ROAD_COST);
@@ -342,7 +358,7 @@ export class City {
 
   paintZone(i: number, zone: number, density: number): boolean {
     const t = this.tiles;
-    if (t.road[i] || t.civic[i]) return false;
+    if (t.road[i] || t.civic[i] || this.terrain.water[i]) return false;
     if (t.zone[i] === zone && t.density[i] === density) return false;
     if (!this.canAfford(ZONE_COST)) return false;
     this.history.touch(t, i);
@@ -366,6 +382,7 @@ export class City {
     for (let y = ay; y < ay + def.size; y++) {
       for (let x = ax; x < ax + def.size; x++) {
         const i = this.grid.index(x, y);
+        if (this.terrain.water[i]) return { ok: false, error: 'part of the site is under water' };
         if (this.tiles.civic[i] || this.tiles.road[i]) {
           return { ok: false, error: 'the site is occupied' };
         }

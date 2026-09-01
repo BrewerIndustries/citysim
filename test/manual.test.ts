@@ -6,6 +6,7 @@ import { CIVIC_DEFS, MAX_LEVEL } from '../src/sim/tiles.ts';
 import { SERIES, HISTORY_LIMIT } from '../src/sim/history-series.ts';
 import { MAX_UNDO } from '../src/sim/history.ts';
 import { AUTOSAVE_MONTHS } from '../src/app/autosave.ts';
+import { SHORE_AMENITY } from '../src/sim/city.ts';
 import { requiredDesirability } from '../src/sim/growth.ts';
 import { LAND_VALUE_TERMS } from '../src/sim/sim.ts';
 import { NEUTRAL_TAX } from '../src/sim/demand.ts';
@@ -111,4 +112,10 @@ test('the history section lists every series', () => {
   const t = text(section('history'));
   for (const s of SERIES) assert.ok(t.includes(s.label), `history section omits ${s.label}`);
   assert.ok(t.includes(String(HISTORY_LIMIT)), 'should quote the real retention limit');
+});
+
+test('the terrain section quotes the real waterfront amenity value', () => {
+  const t = text(section('terrain'));
+  assert.ok(t.includes(String(SHORE_AMENITY)), 'should quote the real shore amenity');
+  assert.match(t, /nothing can be built on water/i);
 });

@@ -12,8 +12,9 @@ import type { Camera } from './camera.ts';
 import type { Snapshot } from './protocol.ts';
 import {
   GROUND, GROUND_ALT, ROAD, UNPOWERED, ZONE_TINT, GRID_LINE, DEVELOPED_OUTLINE,
-  buildingColour, CIVIC_COLOUR,
+  WATER_DEEP, WATER_SHALLOW, SHORE, mix, buildingColour, CIVIC_COLOUR,
 } from './citypalette.ts';
+import { SEA_LEVEL } from '../sim/terrain.ts';
 
 export interface Overlay {
   lut: Uint8ClampedArray;
@@ -30,12 +31,17 @@ export class CityRenderer {
   private imgH = 0;
 
   private readonly gridWidth: number;
+  private terrain: { water: Uint8Array; shore: Uint8Array; height: Uint8Array } | null = null;
 
   constructor(gridWidth: number) {
     this.gridWidth = gridWidth;
     const ctx = this.off.getContext('2d', { willReadFrequently: false });
     if (!ctx) throw new Error('2d context unavailable');
     this.offCtx = ctx;
+  }
+
+  setTerrain(water: Uint8Array, shore: Uint8Array, height: Uint8Array): void {
+    this.terrain = { water, shore, height };
   }
 
   private ensure(w: number, h: number): void {
@@ -70,6 +76,14 @@ export class CityRenderer {
         const i = srcRow + r.x0 + x;
         let c: number;
 
+        const terrain = this.terrain;
+        if (terrain && terrain.water[i]) {
+          // Depth shading: the further below sea level, the darker the water.
+          const depth = Math.min(1, (SEA_LEVEL - terrain.height[i]) / SEA_LEVEL);
+          px[dstRow + x] = mix(WATER_SHALLOW, WATER_DEEP, depth);
+          continue;
+        }
+
         if (road[i]) {
           c = ROAD;
         } else if (civic[i]) {
@@ -82,8 +96,17 @@ export class CityRenderer {
           // Density reads as a subtle stipple on empty lots, so you can tell what you
           // painted before anything is built on it.
           if (density[i] > 0 && ((r.x0 + x + r.y0 + y) & 1) === 0) c = lighten(c, density[i] * 10);
+        } else if (terrain && terrain.shore[i]) {
+          c = SHORE;
         } else {
           c = ((r.x0 + x) ^ (r.y0 + y)) & 4 ? GROUND : GROUND_ALT;
+        }
+
+        // Gentle elevation shading on open land, so the map reads as terrain rather
+        // than a flat plain. Cosmetic only — height has no gameplay effect yet.
+        if (terrain && level[i] === 0 && !road[i] && !civic[i]) {
+          const lift = (terrain.height[i] - SEA_LEVEL) / (255 - SEA_LEVEL);
+          c = mix(c, 0xff000000 | 0x00ffffff, Math.max(0, Math.min(0.16, lift * 0.16)));
         }
 
         if (overlay && layer) {

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { City } from '../src/sim/city.ts';
 import { ZONE_RES, ZONE_COM, CIVIC_DEFS } from '../src/sim/tiles.ts';
 import { MAX_UNDO } from '../src/sim/history.ts';
@@ -10,7 +11,7 @@ const snapshotOf = (c: City) =>
   ).join('|') + `|${Math.round(c.funds)}`;
 
 test('undo restores tiles and money exactly', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   const before = snapshotOf(c);
 
   c.beginStroke('s1', 'Road');
@@ -24,7 +25,7 @@ test('undo restores tiles and money exactly', () => {
 
 test('a whole drag stroke is one undo step', () => {
   // Fifty presses of undo to take back one dragged road would be worse than no undo.
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   c.beginStroke('s1', 'Road');
   for (let x = 10; x < 60; x++) c.buildRoad(c.grid.index(x, 30));
   c.endStroke();
@@ -34,7 +35,7 @@ test('a whole drag stroke is one undo step', () => {
 });
 
 test('redo reapplies exactly what undo took away', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   c.beginStroke('s1', 'Zone');
   for (let x = 10; x < 40; x++) c.paintZone(c.grid.index(x, 30), ZONE_RES, 1);
   c.endStroke();
@@ -46,7 +47,7 @@ test('redo reapplies exactly what undo took away', () => {
 });
 
 test('undo cannot be used to farm money', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   const start = c.funds;
   for (let n = 0; n < 6; n++) {
     c.beginStroke(`s${n}`, 'Road');
@@ -58,7 +59,7 @@ test('undo cannot be used to farm money', () => {
 });
 
 test('undoing a civic building removes its whole footprint', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   const plant = CIVIC_DEFS.find((d) => d.key === 'power')!;
   c.beginStroke('s1', plant.label);
   assert.ok(c.placeCivic(c.grid.index(20, 20), plant.id).ok);
@@ -70,7 +71,7 @@ test('undoing a civic building removes its whole footprint', () => {
 });
 
 test('undoing a bulldozed civic restores the whole footprint', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   const school = CIVIC_DEFS.find((d) => d.key === 'school')!;
   c.beginStroke('a', school.label);
   c.placeCivic(c.grid.index(30, 30), school.id);
@@ -89,7 +90,7 @@ test('undoing a bulldozed civic restores the whole footprint', () => {
 });
 
 test('a stroke that changes nothing does not create an undo step', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   c.beginStroke('s1', 'Zone');
   c.paintZone(c.grid.index(20, 20), ZONE_RES, 0);
   c.endStroke();
@@ -106,7 +107,7 @@ test('a stroke that changes nothing does not create an undo step', () => {
 });
 
 test('a new action clears the redo stack', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   c.beginStroke('a', 'Road');
   c.buildRoad(c.grid.index(10, 10));
   c.endStroke();
@@ -120,7 +121,7 @@ test('a new action clears the redo stack', () => {
 });
 
 test('history is bounded', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   c.funds = 10_000_000;
   for (let n = 0; n < MAX_UNDO + 40; n++) {
     c.beginStroke(`s${n}`, 'Road');
@@ -131,7 +132,7 @@ test('history is bounded', () => {
 });
 
 test('undo works on a running city and the simulation keeps up', () => {
-  const c = new City(128, 1);
+  const c = new City(128, 1, FLAT_MAP);
   c.firesEnabled = false;
   const g = c.grid;
   c.beginStroke('a', 'Build');

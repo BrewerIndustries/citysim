@@ -22,7 +22,7 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
   switch (msg.type) {
     case 'init':
       city = new City(msg.size, msg.seed);
-      self.postMessage({ type: 'ready', width: city.grid.width, height: city.grid.height });
+      postReady(city);
       last = performance.now();
       loop();
       break;
@@ -70,7 +70,7 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       try {
         const loaded = deserialize(msg.bytes);
         city = loaded.city;
-        self.postMessage({ type: 'ready', width: city.grid.width, height: city.grid.height });
+        postReady(city);
         if (msg.slot !== 'auto') {
           city.pushMessage(`Loaded ${city.stats.population.toLocaleString()} residents, ${monthName(city.month)} ${city.year}.`);
         }
@@ -79,11 +79,23 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       }
       break;
     case 'new':
-      city = new City(msg.size, msg.seed);
-      self.postMessage({ type: 'ready', width: city.grid.width, height: city.grid.height });
+      city = new City(msg.size, msg.seed, msg.mapSeed);
+      postReady(city);
       break;
   }
 };
+
+function postReady(c: City): void {
+  // Terrain is fixed for the life of a city; sending it once keeps it out of the
+  // per-frame snapshot entirely.
+  const water = new Uint8Array(c.terrain.water);
+  const shore = new Uint8Array(c.terrain.shore);
+  const terrainHeight = new Uint8Array(c.terrain.height);
+  self.postMessage(
+    { type: 'ready', width: c.grid.width, height: c.grid.height, water, shore, terrainHeight },
+    [water.buffer, shore.buffer, terrainHeight.buffer],
+  );
+}
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December'];

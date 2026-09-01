@@ -14,6 +14,7 @@ import { powerDraw } from '../sim/power.ts';
 import { NEUTRAL_TAX } from '../sim/demand.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { CELL_METRES } from '../sim/grid.ts';
+import { SHORE_AMENITY } from '../sim/city.ts';
 import { LAYERS } from './palette.ts';
 import { SERIES, HISTORY_LIMIT, type SeriesKey } from '../sim/history-series.ts';
 import { MAX_UNDO } from '../sim/history.ts';
@@ -125,6 +126,22 @@ export function buildManual(): ManualSection[] {
         ])}
         <p>Roads cost ${money(ROAD_UPKEEP)} per tile per month to maintain, so a sprawling
         network is a permanent drain. This is the main reason not to over-build streets.</p>`,
+    },
+    {
+      id: 'terrain',
+      title: 'Terrain & water',
+      html: `
+        <p>Every new city gets its own map, generated from a seed. Roughly a fifth of it is
+        water, and <b>nothing can be built on water</b> — no roads, no zoning, no buildings.
+        Rivers and lakes are the constraint your street layout has to work around.</p>
+        <p>The <b>waterfront is an amenity</b>. A land tile touching water carries an amenity
+        value of ${SHORE_AMENITY} — less than a park's, but it runs the entire length of
+        every shore, so coastal and riverside land is worth more before you build anything
+        at all. Land value spreads inland from it just like a park's does.</p>
+        <p>Land is shaded by elevation. That shading is <b>cosmetic for now</b> — height
+        does not yet affect building, cost or drainage.</p>
+        <p>Press <b>New</b> for a fresh map. Tick <b>New map is flat</b> first if you would
+        rather build on open ground with no water at all.</p>`,
     },
     {
       id: 'zoning',

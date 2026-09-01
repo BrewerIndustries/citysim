@@ -12,6 +12,10 @@ export function rgb(r: number, g: number, b: number): number {
 }
 
 export const GROUND = rgb(26, 32, 27);
+/** Water, shaded by depth so lakes read as bodies rather than flat cutouts. */
+export const WATER_DEEP = rgb(14, 26, 44);
+export const WATER_SHALLOW = rgb(30, 58, 84);
+export const SHORE = rgb(48, 62, 52);
 export const GROUND_ALT = rgb(29, 35, 30);
 export const ROAD = rgb(66, 70, 78);
 export const ROAD_EDGE = rgb(52, 56, 63);
@@ -41,6 +45,16 @@ const COM = [rgb(54, 96, 138), rgb(70, 126, 174), rgb(92, 156, 202), rgb(120, 18
 const IND = [rgb(124, 96, 48), rgb(154, 120, 58), rgb(182, 144, 70), rgb(206, 168, 88), rgb(226, 194, 118), rgb(242, 218, 158)];
 
 export const BUILDING = [null, RES, COM, IND] as const;
+
+/** Blend two packed colours. t = 0 gives a, t = 1 gives b. */
+export function mix(a: number, b: number, t: number): number {
+  const ar = a & 255, ag = (a >>> 8) & 255, ab = (a >>> 16) & 255;
+  const br = b & 255, bg = (b >>> 8) & 255, bb = (b >>> 16) & 255;
+  return (255 << 24) |
+    (((ab + (bb - ab) * t) | 0) << 16) |
+    (((ag + (bg - ag) * t) | 0) << 8) |
+    ((ar + (br - ar) * t) | 0);
+}
 
 export function buildingColour(zone: number, level: number): number {
   const ramp = BUILDING[zone];
