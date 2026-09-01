@@ -22,6 +22,7 @@ a ¾ view for when you're looking. Offline, single-player, no DRM, no timers.
 | [SIMULATION-MODEL.md](docs/SIMULATION-MODEL.md) | Field-based vs agent-based explained, and the three-layer hybrid we're building |
 | [TECH-STACK.md](docs/TECH-STACK.md) | Why Steam over web, Electron over Tauri, and the tiered scaling ladder |
 | [OPEN-QUESTIONS.md](docs/OPEN-QUESTIONS.md) | ~30 questions to answer before building, each with a recommended default |
+| [TWO-INSTANCES.md](docs/TWO-INSTANCES.md) | Running a play instance and a dev instance side by side |
 
 ## Decided
 
