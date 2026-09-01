@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Grid, CELL_METRES } from '../src/sim/grid.ts';
-import { Fields } from '../src/sim/fields.ts';
-import { blur } from '../src/sim/diffuse.ts';
+import { Fields, DIFFUSED, FIELD_MAX } from '../src/sim/fields.ts';
+import { blur, scaleField, gainFor } from '../src/sim/diffuse.ts';
 import { Simulation } from '../src/sim/sim.ts';
 import { Rng } from '../src/sim/rng.ts';
 
@@ -134,5 +134,49 @@ test('field storage is one contiguous buffer and allocates nothing per tick', ()
   assert.equal(s.fields.bytes, bytesBefore);
   for (const [, plane] of s.fields.byName) {
     assert.equal(plane.buffer, bufBefore, 'a field plane escaped the shared buffer');
+  }
+});
+
+test('gain restores peak amplitude so influence is not diluted by reach', () => {
+  // Regression test for a real bug: a mass-conserving blur divides a station's coverage
+  // across every cell it reaches, so a source of 140 peaked at 0.2 and every derived
+  // field came out flat. gainFor() must bring the peak back to the source's own value.
+  const w = 128, h = 128;
+  const g = new Grid(w, h);
+  const f = new Fields(g);
+  const src = f.get('policeSrc');
+  const dst = f.get('policeCover');
+  const c = g.index(64, 64);
+  src[c] = 140;
+
+  for (const r of [4, 10, 20]) {
+    blur(src, dst, w, h, r, f.scratchA, f.scratchB, f.scratchRow);
+    scaleField(dst, gainFor(r));
+    assert.ok(
+      Math.abs(dst[c] - 140) < 0.5,
+      `radius ${r}: peak should return to the source value 140, got ${dst[c].toFixed(2)}`,
+    );
+  }
+});
+
+test('every diffused field lands on the shared 0-255 scale', () => {
+  const s = new Simulation({ width: 256, height: 256, seed: 5 });
+  const rng = new Rng(99);
+  for (const d of DIFFUSED) {
+    const src = s.fields.get(d.src);
+    for (let k = 0; k < 300; k++) src[rng.int(s.grid.size)] = rng.range(20, 160);
+  }
+  for (let t = 0; t < 30; t++) s.step();
+
+  for (const d of DIFFUSED) {
+    const plane = s.fields.get(d.dst);
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 0; i < plane.length; i++) {
+      if (plane[i] < min) min = plane[i];
+      if (plane[i] > max) max = plane[i];
+    }
+    assert.ok(min >= 0, `${d.dst} went negative: ${min}`);
+    assert.ok(max <= FIELD_MAX, `${d.dst} exceeded ${FIELD_MAX}: ${max}`);
   }
 });

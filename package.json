@@ -7,7 +7,16 @@
   "scripts": {
     "test": "node --test test/*.test.ts",
     "bench": "node src/bench/bench.ts",
-    "bench:full": "node src/bench/bench.ts --tiers=1,2,3"
+    "bench:full": "node src/bench/bench.ts --tiers=1,2,3",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
-  "engines": { "node": ">=22.6" }
+  "engines": {
+    "node": ">=22.6"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  }
 }

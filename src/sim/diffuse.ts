@@ -81,6 +81,30 @@ export function decay(dst: Float32Array, factor: number): void {
   for (let i = 0; i < dst.length; i++) dst[i] *= factor;
 }
 
+/**
+ * dst = dst * k.
+ *
+ * Used to restore amplitude after diffusion. blur() conserves MASS — a point source of
+ * total M spreads out so the sum stays M, which means the peak drops to M/(2r+1)^2. That
+ * is correct physics for a dispersing plume and completely wrong for influence: a police
+ * station's coverage should be strong next door and fade with distance, not be divided
+ * across the 1,150 cells it reaches.
+ *
+ * Multiplying by gainFor(r) restores the peak to the source's own value, turning the
+ * kernel from "spread this mass out" into "this is my influence, falling linearly to zero
+ * at 2r". Overlapping sources then add, which is the behaviour every field here wants.
+ */
+export function scaleField(dst: Float32Array, k: number): void {
+  if (k === 1) return;
+  for (let i = 0; i < dst.length; i++) dst[i] *= k;
+}
+
+/** Gain that restores a point source's peak amplitude after a double box blur of radius r. */
+export function gainFor(r: number): number {
+  const w = 2 * r + 1;
+  return w * w;
+}
+
 /** dst = clamp(dst, 0, max). */
 export function clampField(dst: Float32Array, max: number): void {
   for (let i = 0; i < dst.length; i++) {

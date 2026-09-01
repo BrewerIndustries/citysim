@@ -4,8 +4,8 @@
  * the game, and could be lifted to WASM without touching game logic.
  */
 import { Grid } from './grid.ts';
-import { Fields, DIFFUSED } from './fields.ts';
-import { blur, decay, clampField } from './diffuse.ts';
+import { Fields, DIFFUSED, FIELD_MAX } from './fields.ts';
+import { blur, scaleField, clampField, gainFor } from './diffuse.ts';
 import { Rng } from './rng.ts';
 
 export interface SimOptions {
@@ -39,7 +39,10 @@ export class Simulation {
       const src = f.get(d.src);
       const dst = f.get(d.dst);
       blur(src, dst, w, h, d.radius, f.scratchA, f.scratchB, f.scratchRow);
-      decay(dst, d.decay);
+      // Restore amplitude (diffusion spreads influence, it must not dilute it), then
+      // normalise onto the shared 0-255 scale so every field is comparable.
+      scaleField(dst, (gainFor(d.radius) * d.decay * FIELD_MAX) / d.norm);
+      clampField(dst, FIELD_MAX);
     }
 
     this.deriveLandValue();

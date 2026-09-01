@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>citysim — field viewer</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="view"></canvas>
+      <aside id="panel">
+        <h1>citysim <span class="tag">field viewer</span></h1>
+        <p class="sub">
+          The simulation spine running live in a Web Worker. This is Plan Mode's ancestor:
+          a direct read of the field arrays, no renderer in between.
+        </p>
+        <div class="layers" id="layers"></div>
+        <dl class="stats" id="stats"></dl>
+        <p class="why" id="why">Click the map to inspect a cell.</p>
+      </aside>
+    </div>
+    <script type="module" src="/src/app/main.ts"></script>
+  </body>
+</html>

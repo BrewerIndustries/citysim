@@ -48,27 +48,40 @@ export type FieldName = (typeof FIELD_NAMES)[number];
  *  decay  — multiplier applied after diffusion, for fields that accumulate over time.
  *  every  — run this pass every N ticks. Slow-moving social stats don't need fast
  *           updates; this is the staggering mitigation from docs/TECH-STACK.md.
+ *  norm   — the raw accumulated value that should read as 255. Diffusion accumulates a
+ *           real quantity (jobs reachable, emissions nearby), and those quantities live on
+ *           wildly different scales — raw job access peaks near 4,500 while fire coverage
+ *           peaks near 120. Normalising each to a documented 0-255 range makes the fields
+ *           comparable, keeps the derived formulas tunable, and makes the Why Panel
+ *           readable: "crime 72" means something on a fixed scale. These values are
+ *           calibrated from measured MAXIMA on a generated Tier 1 city, not guessed.
+ *           (p99 was the first attempt and saturated 1% of the map at 255, wasting the
+ *           whole top of the scale.)
  *  phase  — WHICH tick in the `every` cycle this pass runs on. Without distinct phases
  *           the staggered passes all align on tick 0, 20, 40... and that one tick costs
  *           as much as running everything every tick — measured as a 3x p95 spike over
  *           median. Phases spread the load so no tick runs more than ~4 passes.
  */
 export const DIFFUSED: ReadonlyArray<{
-  src: FieldName; dst: FieldName; radius: number; decay: number; every: number; phase: number;
+  src: FieldName; dst: FieldName; radius: number; decay: number; norm: number;
+  every: number; phase: number;
 }> = [
   // Fast-moving, matters immediately — every tick.
-  { src: 'emission',   dst: 'pollution',      radius: 12, decay: 0.94, every: 1,  phase: 0 },
-  { src: 'crimeGen',   dst: 'crime',          radius: 8,  decay: 0.90, every: 1,  phase: 0 },
+  { src: 'emission',   dst: 'pollution',      radius: 12, decay: 0.94, norm: 3600, every: 1,  phase: 0 },
+  { src: 'crimeGen',   dst: 'crime',          radius: 8,  decay: 0.90, norm: 1800, every: 1,  phase: 0 },
   // Service coverage changes only when you build something — quarter rate, one per tick.
-  { src: 'policeSrc',  dst: 'policeCover',    radius: 20, decay: 1.0,  every: 4,  phase: 0 },
-  { src: 'fireSrc',    dst: 'fireCover',      radius: 18, decay: 1.0,  every: 4,  phase: 1 },
-  { src: 'transitSrc', dst: 'transitAccess',  radius: 10, decay: 1.0,  every: 4,  phase: 2 },
-  { src: 'amenity',    dst: 'amenityAccess',  radius: 14, decay: 1.0,  every: 4,  phase: 3 },
+  { src: 'policeSrc',  dst: 'policeCover',    radius: 20, decay: 1.0,  norm: 260,  every: 4,  phase: 0 },
+  { src: 'fireSrc',    dst: 'fireCover',      radius: 18, decay: 1.0,  norm: 290,  every: 4,  phase: 1 },
+  { src: 'transitSrc', dst: 'transitAccess',  radius: 10, decay: 1.0,  norm: 480,  every: 4,  phase: 2 },
+  { src: 'amenity',    dst: 'amenityAccess',  radius: 14, decay: 1.0,  norm: 2400, every: 4,  phase: 3 },
   // Slow social stats — see docs/FEATURES.md, education moves over decades.
   // Phases 5 and 7 are odd, so they never collide with the every-4 passes on phase 0.
-  { src: 'schoolSrc',  dst: 'schoolCover',    radius: 24, decay: 1.0,  every: 10, phase: 5 },
-  { src: 'jobsC',      dst: 'jobAccess',      radius: 30, decay: 1.0,  every: 10, phase: 7 },
+  { src: 'schoolSrc',  dst: 'schoolCover',    radius: 24, decay: 1.0,  norm: 550,  every: 10, phase: 5 },
+  { src: 'jobsC',      dst: 'jobAccess',      radius: 30, decay: 1.0,  norm: 9000, every: 10, phase: 7 },
 ];
+
+/** Every diffused field is normalised to this range. One scale for the whole sim. */
+export const FIELD_MAX = 255;
 
 export class Fields {
   readonly buffer: ArrayBuffer;

@@ -69,6 +69,8 @@ export function generateCity(width: number, height: number, seed = 1, forceAllPa
       const i = grid.index(x, y);
       builtCells++;
 
+      // Industry is ~7% of built area, not 15%: at 15% with a radius-12 plume it
+      // blankets the whole map in pollution and every other field stops mattering.
       const kind = rng.next();
       if (kind < 0.58) {
         // Residential — denser toward the centre.
@@ -77,7 +79,7 @@ export function generateCity(width: number, height: number, seed = 1, forceAllPa
         population += people;
         crimeGen[i] = 2 + density * 8;
         emission[i] = density * 1.5;
-      } else if (kind < 0.85) {
+      } else if (kind < 0.93) {
         // Commercial.
         jobsC[i] = 2 + density * density * 18;
         crimeGen[i] = 3 + density * 6;
@@ -85,7 +87,7 @@ export function generateCity(width: number, height: number, seed = 1, forceAllPa
       } else {
         // Industry — sited toward the edges in a real city, and dirty.
         jobsI[i] = 3 + (1 - density) * 12;
-        emission[i] = 25 + (1 - density) * 45;
+        emission[i] = 14 + (1 - density) * 22;
         crimeGen[i] = 2;
       }
 
@@ -95,7 +97,7 @@ export function generateCity(width: number, height: number, seed = 1, forceAllPa
       else if (civic < 0.0022) fireSrc[i] = 130;
       else if (civic < 0.0034) schoolSrc[i] = 150;
       else if (civic < 0.0130) transitSrc[i] = 80;
-      else if (civic < 0.0320) amenity[i] = 60 + rng.next() * 60;
+      else if (civic < 0.0600) amenity[i] = 60 + rng.next() * 60;
     }
   }
 
