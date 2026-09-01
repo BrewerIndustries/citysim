@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { City } from '../src/sim/city.ts';
+import { City, TICKS_PER_MONTH, CONDITION_TTL } from '../src/sim/city.ts';
 import { FLAT_MAP, WATER_TABLE_MIN } from '../src/sim/terrain.ts';
 import { UTILITY_REACH } from '../src/sim/utility.ts';
 import { ZONE_RES, ZONE_COM, ZONE_IND, CIVIC_BY_KEY } from '../src/sim/tiles.ts';
@@ -230,4 +230,25 @@ test('a connected pump actually supplies the far end of its pipe', () => {
   c.step();
   assert.equal(c.tiles.watered[c.grid.index(69, 41)], 1, 'water should reach the end of the run');
   assert.equal(c.tiles.watered[c.grid.index(69, 40 + UTILITY_REACH + 1)], 0, 'and no further than the reach');
+});
+
+test('a standing complaint clears once the problem is fixed', () => {
+  // Being told the pump has no pipe AFTER attaching one is worse than not being told,
+  // so condition warnings expire far faster than one-off events.
+  const c = new City(128, 1, FLAT_MAP);
+  c.funds = 1_000_000;
+  c.setDisasters(false);
+  c.placeCivic(c.grid.index(40, 40), pump.id);
+  for (let t = 0; t < TICKS_PER_MONTH * 2; t++) c.step();
+  assert.ok(
+    c.activeMessages(5).some((m) => /no pipe attached/.test(m)),
+    'the unattached pump should be reported',
+  );
+
+  c.buildUtility(c.grid.index(42, 40), 'pipe');
+  for (let t = 0; t < CONDITION_TTL + TICKS_PER_MONTH; t++) c.step();
+  assert.ok(
+    !c.activeMessages(5).some((m) => /no pipe attached/.test(m)),
+    'and the complaint should be gone shortly after it is fixed',
+  );
 });

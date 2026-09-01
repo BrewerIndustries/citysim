@@ -32,8 +32,16 @@ export const LINE_COST = 6;
 export const PIPE_COST = 6;
 export const LINE_UPKEEP = 0.15;
 export const PIPE_UPKEEP = 0.15;
-/** Ticks a ticker message stays on screen before it expires. */
+/** Ticks a one-off event (a fire, a flood, an achievement) stays on screen. */
 export const MESSAGE_TTL = 220;
+/**
+ * Ticks a STANDING CONDITION stays on screen — a brownout, an unattached pump.
+ *
+ * Much shorter, because these are re-raised every month while the problem lasts, so a
+ * long life only means the complaint outlives the fix. Attaching a pipe and still being
+ * told the pump has no pipe is worse than not being told at all.
+ */
+export const CONDITION_TTL = 20;
 /** Amenity value of a waterfront tile. Below a park's, but it runs the whole coast. */
 export const SHORE_AMENITY = 48;
 /** Source fields written from what the player has built. */
@@ -92,7 +100,7 @@ export class City {
   peakPopulation = 0;
   everBuilt = new Set<number>();
   unlocked: Set<number> = new Set();
-  messages: Array<{ text: string; tick: number }> = [];
+  messages: Array<{ text: string; tick: number; ttl: number }> = [];
 
   private roadsDirty = true;
   private civicsDirty = true;
@@ -297,22 +305,28 @@ export class City {
     if (this.funds < 0 && !this.bankrupt) {
       this.bankrupt = true;
       this.wasBankrupt = true;
-      this.pushMessage('The city is in the red. Raise taxes or cut services.');
+      this.pushMessage('The city is in the red. Raise taxes or cut services.', CONDITION_TTL);
     } else if (this.funds >= 0 && this.bankrupt) {
       this.bankrupt = false;
       this.pushMessage('The books are balanced again.');
     }
     if (this.power.shortfall) {
-      this.pushMessage(`Brownout: demand ${Math.round(this.power.demand)} MW exceeds supply ${this.power.supply} MW.`);
+      this.pushMessage(
+        `Brownout: demand ${Math.round(this.power.demand)} MW exceeds supply ${this.power.supply} MW.`,
+        CONDITION_TTL,
+      );
     }
     for (const s of this.power.isolatedSources) {
-      this.pushMessage(`The power plant at ${s.x}, ${s.y} has no line attached to it.`);
+      this.pushMessage(`The power plant at ${s.x}, ${s.y} has no line attached to it.`, CONDITION_TTL);
     }
     for (const s of this.water.isolatedSources) {
-      this.pushMessage(`The water pump at ${s.x}, ${s.y} has no pipe attached to it.`);
+      this.pushMessage(`The water pump at ${s.x}, ${s.y} has no pipe attached to it.`, CONDITION_TTL);
     }
     if (this.water.shortfall) {
-      this.pushMessage(`Water shortage: demand ${Math.round(this.water.demand)} exceeds supply ${this.water.supply}.`);
+      this.pushMessage(
+        `Water shortage: demand ${Math.round(this.water.demand)} exceeds supply ${this.water.supply}.`,
+        CONDITION_TTL,
+      );
     }
   }
 
@@ -386,10 +400,10 @@ export class City {
     this.unlocked = next;
   }
 
-  pushMessage(text: string): void {
+  pushMessage(text: string, ttl = MESSAGE_TTL): void {
     const head = this.messages[0];
-    if (head && head.text === text) { head.tick = this.tickCount; return; }
-    this.messages.unshift({ text, tick: this.tickCount });
+    if (head && head.text === text) { head.tick = this.tickCount; head.ttl = ttl; return; }
+    this.messages.unshift({ text, tick: this.tickCount, ttl });
     if (this.messages.length > 40) this.messages.length = 40;
   }
 
@@ -397,7 +411,7 @@ export class City {
   activeMessages(limit = 3): string[] {
     const out: string[] = [];
     for (const m of this.messages) {
-      if (this.tickCount - m.tick > MESSAGE_TTL) break;
+      if (this.tickCount - m.tick > m.ttl) continue;
       out.push(m.text);
       if (out.length >= limit) break;
     }
