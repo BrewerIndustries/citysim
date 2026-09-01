@@ -1,6 +1,6 @@
 # citysim *(working title)*
 
-A SimCity-spirit city builder. Simulation spine running; see **Status** below.
+A SimCity-spirit city builder. **Playable** — see **How to play** below.
 
 ## The one-paragraph pitch
 
@@ -44,25 +44,47 @@ a ¾ view for when you're looking. Offline, single-player, no DRM, no timers.
 - **Art:** architectural scale model — matte materials, heavy ambient occlusion, semantic
   palette by land use, modular kit-of-parts buildings. Realistic proportions, not
   photoreal surfaces.
-- **First slice (S0):** one city tile, the Why Panel working, three data layers, zoning
-  that grows and abandons for reasons you can read on screen.
+- **Next:** dirty-chunk updates to bring Tier 3 under budget, then the orthographic ¾
+  renderer over the same simulation.
 
-## What runs today
+## How to play
 
 ```bash
 npm install
-npm test          # 11 tests: determinism, diffusion shape, scale bounds, no-realloc
-npm run bench     # Tier 1 + Tier 2 simulation benchmark
-npm run dev       # browser field viewer at localhost:5173
+npm run dev       # http://localhost:5173
 ```
+
+1. **Plop a coal power plant** ($2,200). Nothing develops without power.
+2. **Draw roads** — drag to lay a line. Roads carry power as well as traffic, and every
+   plot must be within 3 tiles of one.
+3. **Zone** residential, commercial and industrial beside the roads. Watch the RCI meter
+   in the top bar for what the city actually wants.
+4. **Add services** — police suppresses crime, parks and schools raise land value. They
+   all cost upkeep every month, so watch the budget.
+5. **Use Inspect** on any tile to find out exactly why it is or isn't growing.
+
+Keys: `1`–`9` tools · `[` `]` speed · `P` pause · scroll to zoom · right-drag or
+space-drag to pan.
+
+### What's in the S0 slice
 
 - **Simulation core** — 22 field planes, struct-of-arrays over one `ArrayBuffer`, zero
   allocation per tick. Separable double box blur giving linear falloff to zero at 2r,
   amplitude-restored and normalised onto a shared 0–255 scale.
-- **Field viewer** — the sim in a Web Worker, 14 data layers, and a working Why readout:
-  click a cell and get an attributed breakdown that sums exactly to the land value.
+- **Gameplay** — zoning at three densities, road network with a distance field, power
+  distribution, development and abandonment, RCI demand, taxes, and a monthly ledger.
+- **The Why Panel** — click any tile: *"Desirability 12, needs 16 to reach level 2"*, plus
+  an attributed land-value breakdown. The terms are exported from the simulation itself
+  (`LAND_VALUE_TERMS`) and pinned by a test, so the explanation cannot drift from the
+  behaviour.
+- **14 data layers** over the city, with infrastructure kept legible underneath.
 - **Benchmark harness** — synthetic city generator for any tier, written before any
   content, wired into CI as a **gate** rather than a report.
+
+```bash
+npm test          # 23 tests
+npm run bench     # Tier 1 + Tier 2 simulation benchmark
+```
 
 ### Measured (M1 Pro, per 100ms tick budget)
 

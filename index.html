@@ -3,20 +3,48 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>citysim — field viewer</title>
+    <title>citysim</title>
   </head>
   <body>
     <div id="app">
-      <canvas id="view"></canvas>
+      <header id="topbar">
+        <div class="brand">citysim <span class="tag">S0</span></div>
+        <div class="stat"><label>Date</label><output id="date">—</output></div>
+        <div class="stat"><label>Funds</label><output id="funds">—</output></div>
+        <div class="stat"><label>Population</label><output id="pop">—</output></div>
+        <div class="stat"><label>Jobs</label><output id="jobs">—</output></div>
+        <div class="stat"><label>Power</label><output id="power">—</output></div>
+        <div class="rci" title="Residential / Commercial / Industrial demand">
+          <div class="rci-bar"><span id="rci-r"></span></div>
+          <div class="rci-bar"><span id="rci-c"></span></div>
+          <div class="rci-bar"><span id="rci-i"></span></div>
+          <div class="rci-labels"><b>R</b><b>C</b><b>I</b></div>
+        </div>
+        <div class="speeds" id="speeds"></div>
+      </header>
+
+      <nav id="tools"></nav>
+
+      <main id="stage">
+        <canvas id="view"></canvas>
+        <div id="ticker"></div>
+        <div id="hint">Drag to build · Right-drag or Space+drag to pan · Scroll to zoom</div>
+      </main>
+
       <aside id="panel">
-        <h1>citysim <span class="tag">field viewer</span></h1>
-        <p class="sub">
-          The simulation spine running live in a Web Worker. This is Plan Mode's ancestor:
-          a direct read of the field arrays, no renderer in between.
-        </p>
-        <div class="layers" id="layers"></div>
-        <dl class="stats" id="stats"></dl>
-        <p class="why" id="why">Click the map to inspect a cell.</p>
+        <section>
+          <h2>Inspect</h2>
+          <div id="why" class="why">Click a tile to see why it is the way it is.</div>
+        </section>
+        <section>
+          <h2>Data layers</h2>
+          <div class="layers" id="layers"></div>
+        </section>
+        <section>
+          <h2>Budget</h2>
+          <dl class="stats" id="budget"></dl>
+          <div class="taxes" id="taxes"></div>
+        </section>
       </aside>
     </div>
     <script type="module" src="/src/app/main.ts"></script>

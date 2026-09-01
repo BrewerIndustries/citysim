@@ -82,7 +82,7 @@ export class Simulation {
     const n = lv.length;
 
     for (let i = 0; i < n; i++) {
-      let v = 20;
+      let v = LAND_VALUE_BASE;
       v += amenity[i] * 0.45;
       v += transit[i] * 0.30;
       v += school[i] * 0.20;
@@ -142,3 +142,23 @@ export class Simulation {
 function clamp255(v: number): number {
   return v < 0 ? 0 : v > 255 ? 255 : v;
 }
+
+/**
+ * The land-value formula, published as data.
+ *
+ * The Why Panel renders these exact terms. Exporting them rather than letting the UI
+ * hard-code its own copy is what stops the explanation drifting from the behaviour —
+ * a panel that confidently misreports the model would be worse than no panel at all.
+ * deriveLandValue() above is kept as an unrolled loop for speed, and the test
+ * 'the Why Panel terms reproduce land value exactly' pins the two together.
+ */
+export const LAND_VALUE_BASE = 20;
+
+export const LAND_VALUE_TERMS: ReadonlyArray<{ field: string; label: string; weight: number }> = [
+  { field: 'amenityAccess', label: 'amenity access', weight: 0.45 },
+  { field: 'transitAccess', label: 'transit access', weight: 0.30 },
+  { field: 'schoolCover', label: 'school coverage', weight: 0.20 },
+  { field: 'policeCover', label: 'police coverage', weight: 0.10 },
+  { field: 'pollution', label: 'pollution', weight: -0.55 },
+  { field: 'crime', label: 'crime', weight: -0.40 },
+];

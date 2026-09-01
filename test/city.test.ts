@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { City } from '../src/sim/city.ts';
 import { ZONE_RES, ZONE_COM, ZONE_IND } from '../src/sim/tiles.ts';
 import { REASON, requiredDesirability } from '../src/sim/growth.ts';
+import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../src/sim/sim.ts';
 
 /** A small city with power, a road spine and zoning either side of it. */
 function buildTestCity(size = 128): City {
@@ -121,4 +122,43 @@ test('the city is deterministic end to end', () => {
     return `${c.stats.population}/${c.stats.jobsC}/${c.stats.jobsI}/${Math.round(c.funds)}/${c.sim.hash()}`;
   };
   assert.equal(run(), run());
+});
+
+test('the Why Panel terms reproduce land value exactly', () => {
+  // The panel renders LAND_VALUE_TERMS; deriveLandValue() is a hand-unrolled loop for
+  // speed. If the two ever diverge the game would explain itself incorrectly, which is
+  // worse than not explaining itself at all. Pin them together.
+  const c = buildTestCity();
+  for (let t = 0; t < 120; t++) c.step();
+  const lv = c.fields.get('landValue');
+
+  let checked = 0;
+  for (let i = 0; i < lv.length; i += 997) {
+    let sum = LAND_VALUE_BASE;
+    for (const term of LAND_VALUE_TERMS) {
+      sum += c.fields.get(term.field as never)[i] * term.weight;
+    }
+    const expected = Math.max(0, Math.min(255, sum));
+    assert.ok(
+      Math.abs(expected - lv[i]) < 0.001,
+      `cell ${i}: panel terms give ${expected.toFixed(3)}, sim stored ${lv[i].toFixed(3)}`,
+    );
+    checked++;
+  }
+  assert.ok(checked > 10);
+});
+
+test('a modest starter city can pay for itself', () => {
+  // The first power plant is mandatory before anything develops, so its upkeep sets the
+  // floor on a viable city. Regression: at $400/mo the opening town ran a permanent
+  // deficit and went bankrupt before it could grow into the bill.
+  const c = buildTestCity();
+  for (let t = 0; t < 400; t++) c.step();
+  assert.ok(c.stats.population > 200, `too small to judge: ${c.stats.population}`);
+  assert.ok(
+    c.ledger.net > 0,
+    `a city of ${c.stats.population} with one plant and two services should break even, ` +
+    `net was ${c.ledger.net.toFixed(0)}/mo`,
+  );
+  assert.ok(c.funds > 0, `went bankrupt: ${Math.round(c.funds)}`);
 });

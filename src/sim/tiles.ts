@@ -53,7 +53,10 @@ export const CIVIC_DEFS: CivicDef[] = [
     source: { field: 'schoolSrc', value: 150 }, colour: '#c8a44f' },
   { id: 4, key: 'park', label: 'Park', cost: 150, upkeep: 20, size: 2,
     source: { field: 'amenity', value: 110 }, colour: '#4fa86a' },
-  { id: 5, key: 'power', label: 'Coal power plant', cost: 3000, upkeep: 400, size: 4,
+  // The first plant is mandatory before anything can develop, so its upkeep sets the
+  // floor on how small a viable city can be. At $400/mo a 200-person town ran a
+  // permanent deficit and went bankrupt before it could grow into the bill.
+  { id: 5, key: 'power', label: 'Coal power plant', cost: 2200, upkeep: 200, size: 4,
     supply: 3000, colour: '#8a8f9c' },
 ];
 
