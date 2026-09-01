@@ -14,6 +14,7 @@ import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
 import { updateFireRisk, stepFires } from './fire.ts';
 import { History } from './history.ts';
 import { Terrain } from './terrain.ts';
+import { lockReason, unlockedIds, type UnlockState } from './unlocks.ts';
 import { emptySeries, pushSample, type SeriesData } from './history-series.ts';
 
 export const TICKS_PER_MONTH = 8;
@@ -67,6 +68,10 @@ export class City {
   firesEnabled = true;
   firesTotal = 0;
   tilesLostToFire = 0;
+  /** Progression is measured against the high-water mark, never the current figure. */
+  peakPopulation = 0;
+  everBuilt = new Set<number>();
+  unlocked: Set<number> = new Set();
   messages: Array<{ text: string; tick: number }> = [];
 
   private roadsDirty = true;
@@ -86,6 +91,7 @@ export class City {
     this.reason = new Uint8Array(this.grid.size);
     this.rngFire = new Rng(seed ^ 0x5bf03635);
     this.terrain = new Terrain(this.grid, mapSeed);
+    this.refreshUnlocks();
     this.queue = new Int32Array(this.grid.size);
     this.seen = new Uint8Array(this.grid.size);
   }
@@ -192,6 +198,11 @@ export class City {
       pollution: this.averageOverBuilt('pollution'),
     });
 
+    if (this.stats.population > this.peakPopulation) {
+      this.peakPopulation = this.stats.population;
+      this.refreshUnlocks(true);
+    }
+
     this.month++;
     if (this.month >= 12) { this.month = 0; this.year++; }
 
@@ -227,6 +238,28 @@ export class City {
       n++;
     }
     return n === 0 ? 0 : sum / n;
+  }
+
+  get unlockState(): UnlockState {
+    return { peakPopulation: this.peakPopulation, everBuilt: this.everBuilt };
+  }
+
+  lockReasonFor(defId: number): string | null {
+    const def = CIVIC_BY_ID.get(defId);
+    return def ? lockReason(def, this.unlockState) : 'unknown building';
+  }
+
+  /** Recompute what's available, announcing anything newly unlocked. */
+  refreshUnlocks(announce = false): void {
+    const next = unlockedIds(this.unlockState);
+    if (announce) {
+      for (const id of next) {
+        if (this.unlocked.has(id)) continue;
+        const def = CIVIC_BY_ID.get(id);
+        if (def) this.pushMessage(`Now available: ${def.label}.`);
+      }
+    }
+    this.unlocked = next;
   }
 
   pushMessage(text: string): void {
@@ -276,6 +309,16 @@ export class City {
         emission[i] = 8 + lvl * (den + 1) * 3.2;
         crimeGen[i] = 1.5 + lvl * 0.4;
       }
+    }
+
+    // Power plants smoke. Until now nothing made civic buildings emit at all, so the
+    // coal plant the manual called "filthy" was in fact perfectly clean — and the
+    // entire clean-versus-dirty trade-off was decorative.
+    const { civic } = this.tiles;
+    for (let i = 0; i < civic.length; i++) {
+      if (!civic[i]) continue;
+      const def = CIVIC_BY_ID.get(civic[i]);
+      if (def?.pollution) emission[i] = def.pollution;
     }
   }
 
@@ -373,6 +416,8 @@ export class City {
   placeCivic(anchor: number, defId: number): { ok: boolean; error?: string } {
     const def = CIVIC_BY_ID.get(defId);
     if (!def) return { ok: false, error: 'unknown building' };
+    const locked = lockReason(def, this.unlockState);
+    if (locked) return { ok: false, error: locked.replace(/^Needs /, 'it needs ') };
     const { width, height } = this.grid;
     const ax = anchor & (width - 1);
     const ay = anchor >>> this.grid.shift;
@@ -401,6 +446,10 @@ export class City {
       }
     }
     this.tiles.civicAnchor[anchor] = 1;
+    if (!this.everBuilt.has(def.id)) {
+      this.everBuilt.add(def.id);
+      this.refreshUnlocks(true);
+    }
     this.markCivicsDirty();
     this.markRoadsDirty();
     return { ok: true };

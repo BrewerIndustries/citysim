@@ -66,12 +66,19 @@ function buildTools(): void {
     const b = document.createElement('button');
     b.className = 'tool';
     b.dataset.id = t.id;
+    if (t.civicId) b.dataset.civic = String(t.civicId);
     b.setAttribute('aria-pressed', String(t === tool));
     b.innerHTML =
       `${t.colour ? `<i class="swatch" style="background:${t.colour}"></i>` : '<i class="swatch"></i>'}` +
-      `<span>${t.label}</span>` +
-      `<span class="cost">${t.cost ? `$${t.cost}` : ''} <kbd>${t.key}</kbd></span>`;
-    b.onclick = () => selectTool(t);
+      `<span class="tool-label">${t.label}</span>` +
+      `<span class="cost">${t.cost ? `$${t.cost.toLocaleString()}` : ''} <kbd>${t.key}</kbd></span>`;
+    b.onclick = () => {
+      if (b.classList.contains('locked')) {
+        note(b.dataset.reason ?? 'Not available yet.');
+        return;
+      }
+      selectTool(t);
+    };
     container!.appendChild(b);
 
     if (t.kind === 'zone') {
@@ -89,6 +96,26 @@ function buildTools(): void {
       container!.appendChild(row);
     }
   }
+}
+
+/** Reflect what the city has unlocked onto the rail. */
+function applyLocks(s: Snapshot): void {
+  const unlocked = new Set(s.unlocked);
+  for (const b of document.querySelectorAll<HTMLElement>('.tool[data-civic]')) {
+    const id = Number(b.dataset.civic);
+    const reason = s.lockReasons[id];
+    const locked = reason !== undefined && !unlocked.has(id);
+    b.classList.toggle('locked', locked);
+    if (locked) {
+      b.dataset.reason = reason;
+      b.title = reason;
+    } else {
+      delete b.dataset.reason;
+      b.title = '';
+    }
+  }
+  // If the selected tool just became unavailable (a fresh city, a load), fall back.
+  if (tool.civicId && !unlocked.has(tool.civicId)) selectTool(TOOLS[0]);
 }
 
 function selectTool(t: Tool): void {
@@ -496,6 +523,8 @@ function updateHud(s: Snapshot): void {
   redo.disabled = !s.canRedo;
   undo.title = s.canUndo ? `Undo ${s.undoLabel} (Cmd/Ctrl+Z)` : 'Nothing to undo';
   redo.title = s.canRedo ? `Redo ${s.redoLabel} (Cmd/Ctrl+Shift+Z)` : 'Nothing to redo';
+
+  applyLocks(s);
 
   $('fire-note').textContent = s.firesTotal === 0
     ? (s.firesEnabled ? 'No fires yet.' : 'Fires are off.')

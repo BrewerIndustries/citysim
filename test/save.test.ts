@@ -88,6 +88,12 @@ test('corrupt and future saves are rejected, not silently mangled', () => {
 
 test('every civic building survives a round trip', () => {
   const c = new City(128, 1, FLAT_MAP);
+  // Most buildings are locked behind progression; this test is about serialisation, so
+  // grant everything rather than playing up to it.
+  c.peakPopulation = 1_000_000;
+  c.funds = 5_000_000;
+  for (const d of CIVIC_DEFS) c.everBuilt.add(d.id);
+  c.refreshUnlocks();
   let x = 4;
   for (const def of CIVIC_DEFS) {
     assert.ok(c.placeCivic(c.grid.index(x, 4), def.id).ok, `could not place ${def.label}`);

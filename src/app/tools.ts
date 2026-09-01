@@ -20,7 +20,16 @@ export interface Tool {
  * buildings the list runs past 9, and `String(8 + n)` was silently handing out "10"
  * and "11", which no single keypress can produce.
  */
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'q', 'w', 'e', 'r', 't', 'y'];
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
+  'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p',
+  'a', 's', 'd', 'f', 'g'];
+
+/** Which rail section each building belongs to. */
+const GROUP_OF: Record<string, string> = {
+  power: 'Power', wind: 'Power', oil: 'Power', gas: 'Power',
+  solar: 'Power', nuclear: 'Power', fusion: 'Power',
+  bus: 'Transit', metro: 'Transit', rail: 'Transit',
+};
 
 export const TOOLS: Tool[] = assignKeys([
   { id: 'inspect', kind: 'inspect', label: 'Inspect', key: '', cost: 0, group: 'Basics' },
@@ -40,7 +49,7 @@ export const TOOLS: Tool[] = assignKeys([
     cost: d.cost,
     civicId: d.id,
     colour: d.colour,
-    group: d.key === 'bus' || d.key === 'metro' ? 'Transit' : 'Services',
+    group: GROUP_OF[d.key] ?? 'Services',
   })),
 ]);
 

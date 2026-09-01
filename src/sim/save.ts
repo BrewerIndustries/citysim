@@ -14,7 +14,7 @@ import { City } from './city.ts';
 import { Tiles } from './tiles.ts';
 
 const MAGIC = 0x4354534d; // "CTSM"
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 /** Planes written to disk, in order. Derived planes are deliberately absent. */
 const PLANES: Array<keyof Tiles & string> = [
@@ -23,6 +23,22 @@ const PLANES: Array<keyof Tiles & string> = [
 
 /** Ticks of field simulation run after loading, to regenerate the derived state. */
 export const SETTLE_TICKS = 14;
+
+/** Civic ids are small and dense, so the built-set fits in one 32-bit word. */
+function bitmaskOf(ids: Set<number>): number {
+  let mask = 0;
+  for (const id of ids) {
+    if (id < 0 || id > 31) throw new Error(`civic id ${id} does not fit the save bitmask`);
+    mask |= 1 << id;
+  }
+  return mask >>> 0;
+}
+
+function setFromBitmask(mask: number): Set<number> {
+  const out = new Set<number>();
+  for (let id = 0; id < 32; id++) if (mask & (1 << id)) out.add(id);
+  return out;
+}
 
 class Writer {
   private buf = new Uint8Array(1024);
@@ -111,6 +127,10 @@ export function serialize(city: City): Uint8Array {
   // demand, and a loaded city that ran one tick on those defaults got a growth surge
   // it hadn't earned.
   w.f64(city.demand.r); w.f64(city.demand.c); w.f64(city.demand.i);
+  // Progression. Peak population is stored because unlocks are earned, not held: a
+  // city that shrinks keeps what it reached.
+  w.u32(city.peakPopulation);
+  w.u32(bitmaskOf(city.everBuilt));
   for (const name of PLANES) writePlane(w, city.tiles[name] as Uint8Array);
   return w.bytes();
 }
@@ -140,6 +160,10 @@ export function deserialize(bytes: Uint8Array): LoadResult {
   city.firesTotal = r.u32();
   city.tilesLostToFire = r.u32();
   city.demand = { r: r.f64(), c: r.f64(), i: r.f64() };
+  if (version >= 3) {
+    city.peakPopulation = r.u32();
+    city.everBuilt = setFromBitmask(r.u32());
+  }
   for (const name of PLANES) readPlane(r, city.tiles[name] as Uint8Array);
 
   // Derived state is not stored; regenerate it before handing the city back, so the
@@ -147,5 +171,14 @@ export function deserialize(bytes: Uint8Array): LoadResult {
   city.markRoadsDirty();
   city.markCivicsDirty();
   city.settleFields(SETTLE_TICKS);
+  // v1/v2 saves predate progression: infer it from what's standing so an old city
+  // doesn't lose access to buildings it already had.
+  if (version < 3) {
+    city.peakPopulation = city.stats.population;
+    for (let i = 0; i < city.tiles.civic.length; i++) {
+      if (city.tiles.civicAnchor[i]) city.everBuilt.add(city.tiles.civic[i]);
+    }
+  }
+  city.refreshUnlocks();
   return { city, version };
 }

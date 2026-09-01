@@ -27,6 +27,9 @@ export interface Snapshot {
   redoLabel: string;
   /** Present only on the frame a month rolls over — it's 600 points x 6 series. */
   series: SeriesData | null;
+  unlocked: number[];
+  lockReasons: Record<number, string>;
+  peakPopulation: number;
   zone: Uint8Array;
   density: Uint8Array;
   road: Uint8Array;

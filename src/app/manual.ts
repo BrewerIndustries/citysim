@@ -9,6 +9,7 @@
 import { ROAD_REACH } from '../sim/roads.ts';
 import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, TICKS_PER_MONTH, ROAD_UPKEEP } from '../sim/city.ts';
 import { CIVIC_DEFS, MAX_LEVEL, ZONE_LABEL } from '../sim/tiles.ts';
+import { requirementText } from '../sim/unlocks.ts';
 import { requiredDesirability, REASON_TEXT, DECLINE_BELOW, DISTRESS_LIMIT, residentsAt, jobsAt } from '../sim/growth.ts';
 import { powerDraw } from '../sim/power.ts';
 import { NEUTRAL_TAX } from '../sim/demand.ts';
@@ -185,10 +186,13 @@ export function buildManual(): ManualSection[] {
       html: `
         <p>Buildings draw <b>${powerDraw(1)} MW per level</b>, so a level-${MAX_LEVEL[2]} tower
         draws ${powerDraw(MAX_LEVEL[2])} MW while an empty lot draws nothing.</p>
-        ${table(['Plant', 'Supplies', 'Cost', 'Upkeep', 'Footprint'],
+        <p>You start with coal. Six more plants unlock as the city grows — see
+        <b>Unlocks</b> for the full ladder and what each one costs in money, land and smoke.</p>
+        ${table(['Plant', 'Supplies', 'Pollution', 'Available'],
           CIVIC_DEFS.filter((d) => d.supply).map((d) => [
-            d.label, `${d.supply!.toLocaleString()} MW`, money(d.cost), money(d.upkeep) + ' / mo',
-            `${d.size}×${d.size}`,
+            d.label, `${d.supply!.toLocaleString()} MW`,
+            d.pollution ? String(d.pollution) : 'none',
+            requirementText(d),
           ]))}
         <p>Power spreads from the plant along <b>connected roads</b>, then out
         ${ROAD_REACH} tiles either side — the same reach as road access, so any plot a road
@@ -250,6 +254,38 @@ export function buildManual(): ManualSection[] {
         ticker with its location.</p>
         <p>If you would rather build without the risk, switch <b>Fires</b> off in the
         Options panel at any time.</p>`,
+    },
+    {
+      id: 'progression',
+      title: 'Unlocks',
+      html: `
+        <p>Most buildings are available from the start, but the better ones have to be
+        earned. Requirements are measured against your <b>peak</b> population and the
+        buildings you have <b>ever</b> built — a recession or a stray bulldozer never takes
+        back something you already unlocked.</p>
+        <p>Locked buildings stay visible in the tool rail, dimmed, with their requirement
+        as a tooltip. You get a message the moment one becomes available.</p>
+        <h4>Power</h4>
+        <p>The energy ladder is the main progression in the game, and every rung is a
+        genuine trade-off between output, running cost, land and smoke.</p>
+        ${table(['Plant', 'Output', 'Cost', 'Upkeep', 'Size', 'Pollution', 'Requires'],
+          CIVIC_DEFS.filter((d) => d.supply).map((d) => [
+            d.label,
+            `${d.supply!.toLocaleString()} MW`,
+            money(d.cost),
+            money(d.upkeep) + '/mo',
+            `${d.size}×${d.size}`,
+            d.pollution ? String(d.pollution) : 'none',
+            requirementText(d),
+          ]))}
+        <p class="tip">Coal is cheap and filthy. Wind is spotless but you will need a dozen
+        turbines to match one coal plant. Everything after that is a question of whether you
+        can afford the capital cost and the land.</p>
+        <h4>Everything else</h4>
+        ${table(['Building', 'Requires', 'Why'],
+          CIVIC_DEFS.filter((d) => !d.supply && d.unlock).map((d) => [
+            d.label, requirementText(d), d.note ?? '',
+          ]))}`,
     },
     {
       id: 'economy',
@@ -362,6 +398,17 @@ function serviceEffect(key: string): string {
     case 'school': return 'Raises land value strongly; a long-term driver of a wealthier city';
     case 'park': return 'Raises land value nearby — the cheapest way to lift a neighbourhood';
     case 'power': return 'Supplies electricity to the road network. Pollutes heavily';
+    case 'wind': return 'A little clean power, no emissions at all';
+    case 'oil': return 'Twice coal\'s output, and cleaner';
+    case 'gas': return 'High output, low emissions, cheap to run';
+    case 'solar': return 'Clean and cheap to run, but it covers a lot of ground';
+    case 'nuclear': return 'Vast clean output for a vast price';
+    case 'fusion': return 'More power than a city can spend';
+    case 'policehq': return 'Police coverage across a whole district';
+    case 'firehq': return 'Fire coverage across a whole district';
+    case 'university': return 'A large land-value lift, and the route to nuclear power';
+    case 'bigpark': return 'The strongest land-value lift in the game';
+    case 'rail': return 'Transit access across a whole quarter';
     case 'bus': return 'Transit access nearby — cheap, and a strong lift to land value';
     case 'metro': return 'Transit access over a much wider area than a bus stop';
     default: return '';

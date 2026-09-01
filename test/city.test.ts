@@ -14,8 +14,11 @@ function buildTestCity(size = 128): City {
   const c = new City(size, 1, FLAT_MAP);
   const g = c.grid;
   for (let x = 8; x < 110; x++) c.buildRoad(g.index(x, 40));
-  for (let y = 30; y < 40; y++) c.buildRoad(g.index(12, y));
-  c.placeCivic(g.index(10, 26), 5); // power plant
+  // The coal plant now smokes, so it goes at the far end of the map rather than next
+  // to the housing — which is exactly the siting decision the game asks the player to
+  // make. Parking it beside the zoning cost this city a third of its population.
+  for (let y = 12; y < 40; y++) c.buildRoad(g.index(100, y));
+  c.placeCivic(g.index(98, 8), 5);
   for (let y = 37; y < 40; y++) for (let x = 20; x < 55; x++) c.paintZone(g.index(x, y), ZONE_RES, 0);
   for (let y = 41; y < 44; y++) for (let x = 20; x < 55; x++) c.paintZone(g.index(x, y), ZONE_COM, 0);
   for (let y = 41; y < 44; y++) for (let x = 65; x < 100; x++) c.paintZone(g.index(x, y), ZONE_IND, 0);
@@ -79,7 +82,7 @@ test('cutting the road supply strands the grid', () => {
   const before = c.stats.population;
   assert.ok(before > 0);
   // Sever the spur that connects the power plant to the city.
-  for (let y = 30; y < 40; y++) c.bulldoze(c.grid.index(12, y));
+  for (let y = 12; y < 40; y++) c.bulldoze(c.grid.index(100, y));
   for (let t = 0; t < 250; t++) c.step();
   assert.ok(c.stats.population < before * 0.5, `expected collapse, went ${before} -> ${c.stats.population}`);
 });

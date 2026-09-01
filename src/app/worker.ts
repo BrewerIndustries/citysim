@@ -6,6 +6,8 @@
  */
 import { City } from '../sim/city.ts';
 import { serialize, deserialize } from '../sim/save.ts';
+import { CIVIC_DEFS } from '../sim/tiles.ts';
+import { lockReason } from '../sim/unlocks.ts';
 import type { FieldName } from '../sim/fields.ts';
 import type { ToWorker, Snapshot } from './protocol.ts';
 
@@ -85,6 +87,16 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
   }
 };
 
+function lockReasonsFor(c: City): Record<number, string> {
+  const out: Record<number, string> = {};
+  const state = c.unlockState;
+  for (const d of CIVIC_DEFS) {
+    const reason = lockReason(d, state);
+    if (reason) out[d.id] = reason;
+  }
+  return out;
+}
+
 function postReady(c: City): void {
   // Terrain is fixed for the life of a city; sending it once keeps it out of the
   // per-frame snapshot entirely.
@@ -153,6 +165,9 @@ function loop(): void {
     // Six 600-point arrays every frame would be ~500KB/s of pure waste; the data only
     // changes once a game month.
     series: c.month !== lastSeriesMonth ? c.series : null,
+    unlocked: [...c.unlocked],
+    lockReasons: lockReasonsFor(c),
+    peakPopulation: c.peakPopulation,
     zone: new Uint8Array(t.zone),
     density: new Uint8Array(t.density),
     road: new Uint8Array(t.road),
