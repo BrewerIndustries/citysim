@@ -12,9 +12,12 @@
  */
 import { City } from './city.ts';
 import { Tiles } from './tiles.ts';
+import { DISASTERS } from './disasters.ts';
+import { ACHIEVEMENTS } from './achievements.ts';
 
 const MAGIC = 0x4354534d; // "CTSM"
-export const SAVE_VERSION = 3;
+const END_MAGIC = 0x454e4421; // "END!"
+export const SAVE_VERSION = 5;
 
 /** Planes written to disk, in order. Derived planes are deliberately absent. */
 const PLANES: Array<keyof Tiles & string> = [
@@ -120,9 +123,20 @@ export function serialize(city: City): Uint8Array {
   w.u8(city.month);
   w.u16(city.year);
   w.u32(city.tick);
-  w.u8(city.firesEnabled ? 1 : 0);
-  w.u32(city.firesTotal);
-  w.u32(city.tilesLostToFire);
+  w.u8(DISASTERS.length);
+  for (const d of DISASTERS) {
+    w.u8(city.disasters[d.key] ? 1 : 0);
+    w.u32(city.disasterCounts[d.key] ?? 0);
+  }
+  w.u32(city.tilesLostToDisaster);
+  // Achievements are stored as INDICES INTO A STABLE ID LIST, resolved back by id on
+  // load. Storing bit positions would silently re-award or revoke achievements the
+  // first time the list is reordered.
+  const earned = ACHIEVEMENTS.map((a, n) => (city.earned.has(a.id) ? n : -1)).filter((n) => n >= 0);
+  w.u16(earned.length);
+  for (const n of earned) w.u16(n);
+  w.u8(city.wasBankrupt ? 1 : 0);
+  w.u16(Math.min(0xffff, city.consecutiveSurplusMonths));
   // Demand must be stored, not re-derived. The constructor seeds optimistic starting
   // demand, and a loaded city that ran one tick on those defaults got a growth surge
   // it hadn't earned.
@@ -132,6 +146,10 @@ export function serialize(city: City): Uint8Array {
   w.u32(city.peakPopulation);
   w.u32(bitmaskOf(city.everBuilt));
   for (const name of PLANES) writePlane(w, city.tiles[name] as Uint8Array);
+  // Sentinel. If the reader and writer ever fall out of step, this fails with "reader
+  // and writer disagree" instead of a misleading complaint about corrupt tile planes —
+  // which is exactly how the achievements block was first noticed to be misplaced.
+  w.u32(END_MAGIC);
   return w.bytes();
 }
 
@@ -156,15 +174,41 @@ export function deserialize(bytes: Uint8Array): LoadResult {
   city.month = r.u8();
   city.year = r.u16();
   city.setTick(r.u32());
-  city.firesEnabled = r.u8() === 1;
-  city.firesTotal = r.u32();
-  city.tilesLostToFire = r.u32();
+  if (version >= 4) {
+    // Written with a count so adding a disaster later doesn't invalidate old saves.
+    const n = r.u8();
+    for (let k = 0; k < n; k++) {
+      const def = DISASTERS[k];
+      const on = r.u8() === 1;
+      const count = r.u32();
+      if (def) { city.disasters[def.key] = on; city.disasterCounts[def.key] = count; }
+    }
+    city.tilesLostToDisaster = r.u32();
+  } else {
+    // v1-v3 only knew about fire.
+    city.disasters.fire = r.u8() === 1;
+    city.disasterCounts.fire = r.u32();
+    city.tilesLostToDisaster = r.u32();
+  }
+  if (version >= 5) {
+    const n = r.u16();
+    for (let k = 0; k < n; k++) {
+      const a = ACHIEVEMENTS[r.u16()];
+      if (a) city.earned.add(a.id);
+    }
+    city.wasBankrupt = r.u8() === 1;
+    city.consecutiveSurplusMonths = r.u16();
+  }
+
   city.demand = { r: r.f64(), c: r.f64(), i: r.f64() };
   if (version >= 3) {
     city.peakPopulation = r.u32();
     city.everBuilt = setFromBitmask(r.u32());
   }
   for (const name of PLANES) readPlane(r, city.tiles[name] as Uint8Array);
+  if (version >= 5 && r.u32() !== END_MAGIC) {
+    throw new Error('corrupt save: reader and writer disagree about the layout');
+  }
 
   // Derived state is not stored; regenerate it before handing the city back, so the
   // player doesn't watch their city flicker through a few ticks of wrong values.

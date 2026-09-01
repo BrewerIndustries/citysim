@@ -7,6 +7,9 @@ import { SERIES, HISTORY_LIMIT } from '../src/sim/history-series.ts';
 import { MAX_UNDO } from '../src/sim/history.ts';
 import { AUTOSAVE_MONTHS } from '../src/app/autosave.ts';
 import { SHORE_AMENITY } from '../src/sim/city.ts';
+import { TOOLS, RESERVED_KEYS } from '../src/app/tools.ts';
+import { DISASTERS } from '../src/sim/disasters.ts';
+import { ACHIEVEMENTS } from '../src/sim/achievements.ts';
 import { requiredDesirability } from '../src/sim/growth.ts';
 import { LAND_VALUE_TERMS } from '../src/sim/sim.ts';
 import { NEUTRAL_TAX } from '../src/sim/demand.ts';
@@ -118,4 +121,25 @@ test('the terrain section quotes the real waterfront amenity value', () => {
   const t = text(section('terrain'));
   assert.ok(t.includes(String(SHORE_AMENITY)), 'should quote the real shore amenity');
   assert.match(t, /nothing can be built on water/i);
+});
+
+test('no tool shortcut collides with a key the interface owns', () => {
+  // Regression: once the tool list outgrew the digits it started handing out letters,
+  // and 'p' went to the solar farm — which silently killed the pause shortcut, because
+  // the tool lookup runs before the pause check.
+  for (const t of TOOLS) {
+    assert.ok(t.key, `${t.label} has no shortcut`);
+    assert.ok(!RESERVED_KEYS.has(t.key), `${t.label} took the reserved key "${t.key}"`);
+  }
+  const keys = TOOLS.map((t) => t.key);
+  assert.equal(new Set(keys).size, keys.length, 'two tools share a shortcut');
+});
+
+test('the manual documents every disaster and the achievement count', () => {
+  const d = text(section('disasters'));
+  for (const x of DISASTERS) {
+    assert.ok(d.includes(x.label), `disasters section omits ${x.label}`);
+  }
+  const a = text(section('achievements'));
+  assert.ok(a.includes(String(ACHIEVEMENTS.length)), 'should quote the real achievement count');
 });

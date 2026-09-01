@@ -31,6 +31,7 @@ export const LAYERS: ReadonlyArray<{ field: string; label: string; ramp: keyof t
   { field: 'pollution', label: 'Pollution', ramp: 'nuisance', max: 255 },
   { field: 'crime', label: 'Crime', ramp: 'nuisance', max: 255 },
   { field: 'fireRisk', label: 'Fire risk', ramp: 'nuisance', max: 255 },
+  { field: 'floodRisk', label: 'Flood risk', ramp: 'coverage', max: 255 },
   { field: 'policeCover', label: 'Police coverage', ramp: 'coverage', max: 255 },
   { field: 'fireCover', label: 'Fire coverage', ramp: 'coverage', max: 255 },
   { field: 'schoolCover', label: 'School coverage', ramp: 'coverage', max: 255 },

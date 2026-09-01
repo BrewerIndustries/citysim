@@ -13,6 +13,11 @@ import type { Grid } from './grid.ts';
 
 /** Height below which a cell is water. */
 export const SEA_LEVEL = 78;
+/** Cells further than this from water cannot flood. */
+export const FLOOD_REACH = 12;
+/** Height above sea level at which flood risk reaches zero. */
+export const FLOOD_RISE = 26;
+
 /** Map seed that produces a completely flat, water-free map. */
 export const FLAT_MAP = 0;
 const FLAT_HEIGHT = 150;
@@ -22,6 +27,14 @@ export class Terrain {
   readonly water: Uint8Array;
   /** 1 where a land cell touches water — the waterfront. */
   readonly shore: Uint8Array;
+  /**
+   * How exposed each land cell is to flooding, 0–255.
+   *
+   * Low ground close to water is at risk; high ground and inland is not. Static for the
+   * life of a map, which is what lets floods be a decision rather than a punishment:
+   * the risk is visible as a data layer before you build anything on it.
+   */
+  readonly floodRisk: Uint8Array;
   waterCells = 0;
 
   constructor(grid: Grid, seed: number) {
@@ -29,6 +42,7 @@ export class Terrain {
     this.height = new Uint8Array(n);
     this.water = new Uint8Array(n);
     this.shore = new Uint8Array(n);
+    this.floodRisk = new Uint8Array(n);
     if (seed === FLAT_MAP) {
       // A featureless plain. Used by tests that build at fixed coordinates, and
       // available in-game for anyone who'd rather plan without a coastline.
@@ -83,6 +97,43 @@ export class Terrain {
           (y < h - 1 && this.water[i + width]);
         if (touches) this.shore[i] = 1;
       }
+    }
+
+    this.computeFloodRisk(grid);
+  }
+
+  /**
+   * Distance to water by multi-source BFS, combined with height above sea level.
+   * Both matter: a cell right on the shore but high up is safe, and so is low ground
+   * far inland.
+   */
+  private computeFloodRisk(grid: Grid): void {
+    const { width, height: h } = grid;
+    const n = grid.size;
+    const dist = new Uint8Array(n).fill(255);
+    const queue = new Int32Array(n);
+    let tail = 0;
+    for (let i = 0; i < n; i++) if (this.water[i]) { dist[i] = 0; queue[tail++] = i; }
+
+    let head = 0;
+    while (head < tail) {
+      const i = queue[head++];
+      const d = dist[i];
+      if (d >= FLOOD_REACH) continue;
+      const x = i % width;
+      const y = (i / width) | 0;
+      if (x > 0 && dist[i - 1] > d + 1) { dist[i - 1] = d + 1; queue[tail++] = i - 1; }
+      if (x < width - 1 && dist[i + 1] > d + 1) { dist[i + 1] = d + 1; queue[tail++] = i + 1; }
+      if (y > 0 && dist[i - width] > d + 1) { dist[i - width] = d + 1; queue[tail++] = i - width; }
+      if (y < h - 1 && dist[i + width] > d + 1) { dist[i + width] = d + 1; queue[tail++] = i + width; }
+    }
+
+    for (let i = 0; i < n; i++) {
+      if (this.water[i] || dist[i] > FLOOD_REACH) continue;
+      const nearness = 1 - dist[i] / (FLOOD_REACH + 1);
+      const rise = this.height[i] - SEA_LEVEL;
+      const lowness = Math.max(0, 1 - rise / FLOOD_RISE);
+      this.floodRisk[i] = Math.round(255 * nearness * lowness);
     }
   }
 

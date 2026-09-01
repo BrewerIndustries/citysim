@@ -32,6 +32,7 @@ export class CityRenderer {
 
   private readonly gridWidth: number;
   private terrain: { water: Uint8Array; shore: Uint8Array; height: Uint8Array } | null = null;
+  private staticLayer: Uint8Array | null = null;
 
   constructor(gridWidth: number) {
     this.gridWidth = gridWidth;
@@ -42,6 +43,11 @@ export class CityRenderer {
 
   setTerrain(water: Uint8Array, shore: Uint8Array, height: Uint8Array): void {
     this.terrain = { water, shore, height };
+  }
+
+  /** An overlay whose data comes from terrain rather than from a simulation field. */
+  setStaticLayer(data: Uint8Array | null): void {
+    this.staticLayer = data;
   }
 
   private ensure(w: number, h: number): void {
@@ -109,8 +115,9 @@ export class CityRenderer {
           c = mix(c, 0xff000000 | 0x00ffffff, Math.max(0, Math.min(0.16, lift * 0.16)));
         }
 
-        if (overlay && layer) {
-          const v = Math.max(0, Math.min(255, (layer[i] / overlay.max) * 255)) | 0;
+        const source = this.staticLayer ?? layer;
+        if (overlay && source) {
+          const v = Math.max(0, Math.min(255, (source[i] / overlay.max) * 255)) | 0;
           const o = v * 4;
           // Infrastructure takes a lighter wash than open land, so the street grid and
           // civic buildings stay readable underneath a data view. Without this the

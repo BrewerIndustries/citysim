@@ -173,3 +173,22 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .tool.locked .tool-label::after { content: ' 🔒'; font-size: 9px; }
 .tool.locked:hover { background: transparent; color: var(--dim); }
 .tool.locked .cost kbd { visibility: hidden; }
+
+/* ---------- achievements ---------- */
+#achievements[hidden] { display: none; }
+#achievements { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; }
+.ach-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 20px; }
+.ach-group { font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--dim); margin: 14px 0 7px; font-weight: 600; }
+.ach-group:first-child { margin-top: 0; }
+.ach { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start;
+  padding: 7px 9px; border-radius: 6px; margin-bottom: 3px; background: #0f1319; }
+.ach.got { background: #16241f; }
+.ach .mark { font-size: 13px; line-height: 1.3; color: #3d4552; text-align: center; }
+.ach.got .mark { color: var(--res); }
+.ach .name { font-size: 12.5px; color: var(--dim); font-weight: 600; }
+.ach.got .name { color: var(--text); }
+.ach .desc { font-size: 11.5px; color: #7b8395; }
+.ach-progress { height: 4px; border-radius: 2px; background: #0e1116; overflow: hidden;
+  margin-bottom: 12px; }
+.ach-progress span { display: block; height: 100%; background: var(--res); }

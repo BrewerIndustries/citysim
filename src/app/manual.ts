@@ -20,6 +20,8 @@ import { LAYERS } from './palette.ts';
 import { SERIES, HISTORY_LIMIT, type SeriesKey } from '../sim/history-series.ts';
 import { MAX_UNDO } from '../sim/history.ts';
 import { AUTOSAVE_MONTHS } from './autosave.ts';
+import { DISASTERS } from '../sim/disasters.ts';
+import { ACHIEVEMENTS } from '../sim/achievements.ts';
 import { DENSITY_LABELS } from './tools.ts';
 
 export interface ManualSection {
@@ -240,6 +242,31 @@ export function buildManual(): ManualSection[] {
         Actual passenger flow is a later addition.</p>`,
     },
     {
+      id: 'disasters',
+      title: 'Disasters',
+      html: `
+        <p>Four things can go wrong. Each is switchable on its own in the Disasters panel,
+        and each is either <b>preventable</b> or at least <b>legible</b> — none of them
+        exists to take your work away at random.</p>
+        ${table(['Disaster', 'Roughly', 'What it does'],
+          DISASTERS.map((d) => [
+            d.label,
+            d.everyYears === 0 ? 'ongoing' : `every ${d.everyYears} years`,
+            d.description,
+          ]))}
+        <h4>Floods</h4>
+        <p>The clearest case of a disaster you can simply avoid. Flood risk is fixed by
+        the terrain — low ground close to water — and it never changes. Turn on the
+        <b>Flood risk</b> layer before you zone, and build the valuable things uphill.
+        Land with no flood risk cannot be flooded, ever.</p>
+        <h4>Earthquakes</h4>
+        <p>Not preventable, but rare, and fire cover limits the fires that follow one.</p>
+        <h4>Tornadoes</h4>
+        <p>Narrow. A tornado takes a street, not a city.</p>
+        <p class="tip">Nothing strikes a settlement below 40 buildings. Losing your first
+        four houses to an earthquake is not a lesson, it's a waste of your time.</p>`,
+    },
+    {
       id: 'fire',
       title: 'Fire',
       html: `
@@ -253,7 +280,7 @@ export function buildManual(): ManualSection[] {
         burns; the bright areas are the ones without cover. Every fire is reported in the
         ticker with its location.</p>
         <p>If you would rather build without the risk, switch <b>Fires</b> off in the
-        Options panel at any time.</p>`,
+        Disasters panel at any time.</p>`,
     },
     {
       id: 'progression',
@@ -358,6 +385,23 @@ export function buildManual(): ManualSection[] {
         drown every reading in empty countryside.</p>`,
     },
     {
+      id: 'achievements',
+      title: 'Achievements',
+      html: `
+        <p>${ACHIEVEMENTS.length} of them, across five areas. Press <b>A</b> or the ★ in
+        the top bar to see the list — locked ones show what they need, because an
+        achievement you can't see isn't something you can aim at.</p>
+        <p>They are never taken away. Once earned, a collapse, a bankruptcy or a
+        bulldozer cannot revoke one.</p>
+        ${table(['Area', 'About'], [
+          ['Growth', 'Population milestones and building height'],
+          ['Economy', 'The treasury, tax policy, and recovering from bankruptcy'],
+          ['Infrastructure', 'Transit, services, and keeping the lights on'],
+          ['Environment', 'Clean power, land value and air quality'],
+          ['Adversity', 'Surviving and rebuilding after disasters'],
+        ])}`,
+    },
+    {
       id: 'controls',
       title: 'Controls',
       html: `
@@ -371,6 +415,7 @@ export function buildManual(): ManualSection[] {
           ['<kbd>P</kbd>', 'Pause'],
           ['<kbd>Cmd/Ctrl</kbd>+<kbd>Z</kbd>', 'Undo'],
           ['<kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>', 'Redo'],
+          ['<kbd>A</kbd>', 'Achievements'],
           ['<kbd>?</kbd> or <kbd>H</kbd>', 'Open this manual'],
           ['<kbd>Esc</kbd>', 'Close this manual'],
         ])}`,
@@ -436,6 +481,7 @@ function layerHint(field: string): string {
     pollution: 'Mostly from industry and power plants. Poisons residential desirability',
     crime: 'Rises with density, falls sharply under police coverage',
     fireRisk: 'Where a fire is likely to start. Driven by building size and lack of fire cover',
+    floodRisk: 'Low ground near water. Fixed by the terrain — check it before you zone',
     policeCover: 'Reach of your police stations',
     fireCover: 'Reach of your fire stations',
     schoolCover: 'Reach of your schools',

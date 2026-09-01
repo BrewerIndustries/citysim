@@ -16,7 +16,7 @@ function played(): City {
   c.placeCivic(g.index(30, 34), 1);
   c.placeCivic(g.index(45, 34), 4);
   c.tax = { r: 11, c: 7, i: 13 };
-  c.firesEnabled = false;
+  c.setDisasters(false);
   for (let t = 0; t < 220; t++) c.step();
   return c;
 }
@@ -37,7 +37,8 @@ test('a saved city reloads identically', () => {
   assert.equal(restored.month, original.month);
   assert.equal(restored.year, original.year);
   assert.equal(restored.tick, original.tick);
-  assert.equal(restored.firesEnabled, original.firesEnabled);
+  assert.deepEqual(restored.disasters, original.disasters);
+  assert.deepEqual(restored.disasterCounts, original.disasterCounts);
 });
 
 test('derived state is regenerated on load, not stored', () => {

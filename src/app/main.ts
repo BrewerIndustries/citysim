@@ -11,6 +11,8 @@ import { writeSlot, readSlot, describeSlot, clearSlot } from './storage.ts';
 import { Chart } from './chart.ts';
 import { AUTOSAVE_MONTHS } from './autosave.ts';
 import { FLAT_MAP } from '../sim/terrain.ts';
+import { DISASTERS } from '../sim/disasters.ts';
+import { ACHIEVEMENTS } from '../sim/achievements.ts';
 import { SERIES, type SeriesData, type SeriesKey } from '../sim/history-series.ts';
 import type { FromWorker, Snapshot, ToWorker, Action } from './protocol.ts';
 
@@ -37,6 +39,11 @@ let brush = 3;
 let layerIndex = -1;
 let overlay: Overlay | null = null;
 let hover: { x: number; y: number } | null = null;
+/**
+ * Overlays backed by terrain rather than by a simulation field. Terrain never changes
+ * during play, so these are sent once with the map instead of every frame.
+ */
+let terrainLayers: Record<string, Uint8Array> = {};
 let selected: number | null = null;
 let speed = 1;
 
@@ -176,12 +183,48 @@ function setLayer(i: number): void {
   if (i < 0) {
     overlay = null;
     post({ type: 'layer', layer: null });
+    renderer.setStaticLayer(null);
   } else {
     const l = LAYERS[i];
     overlay = { lut: buildLut(RAMPS[l.ramp]), max: l.max, alpha: 0.68 };
-    post({ type: 'layer', layer: l.field });
+    const terrainLayer = terrainLayers[l.field];
+    renderer.setStaticLayer(terrainLayer ?? null);
+    post({ type: 'layer', layer: terrainLayer ? null : l.field });
   }
 }
+
+// ---------------------------------------------------------------- achievements
+let earned = new Set<string>();
+
+function buildAchievementsUi(): void {
+  $('ach-open').onclick = () => openAchievements();
+  $('ach-close').onclick = () => closeAchievements();
+  $('achievements').querySelector('[data-close-ach]')!.addEventListener('click', closeAchievements);
+  renderAchievements();
+}
+
+function renderAchievements(): void {
+  const body = $('ach-body');
+  const groups = [...new Set(ACHIEVEMENTS.map((a) => a.group))];
+  const pct = Math.round((earned.size / ACHIEVEMENTS.length) * 100);
+  $('ach-count').textContent = `${earned.size} of ${ACHIEVEMENTS.length}`;
+  body.innerHTML =
+    `<div class="ach-progress"><span style="width:${pct}%"></span></div>` +
+    groups.map((g) =>
+      `<div class="ach-group">${g}</div>` +
+      ACHIEVEMENTS.filter((a) => a.group === g).map((a) => {
+        const got = earned.has(a.id);
+        // Locked achievements still show their description: one you can't see isn't
+        // something you can aim at.
+        return `<div class="ach ${got ? 'got' : ''}"><div class="mark">${got ? '★' : '☆'}</div>` +
+          `<div><div class="name">${a.name}</div><div class="desc">${a.description}</div></div></div>`;
+      }).join(''),
+    ).join('');
+}
+
+function openAchievements(): void { renderAchievements(); $('achievements').hidden = false; }
+function closeAchievements(): void { $('achievements').hidden = true; }
+function achievementsOpen(): boolean { return !$('achievements').hidden; }
 
 // ---------------------------------------------------------------- history graph
 let chart: Chart | null = null;
@@ -266,8 +309,24 @@ function refreshSaveNote(): void {
 }
 
 function buildOptions(): void {
-  const fires = $<HTMLInputElement>('opt-fires');
-  fires.onchange = () => post({ type: 'options', firesEnabled: fires.checked });
+  const box = $('disaster-opts');
+  box.innerHTML = '';
+  for (const d of DISASTERS) {
+    const label = document.createElement('label');
+    label.className = 'toggle';
+    label.title = d.description;
+    label.innerHTML = `<input type="checkbox" data-disaster="${d.key}" checked><span>${d.label}</span>`;
+    box.appendChild(label);
+  }
+  box.querySelectorAll<HTMLInputElement>('input').forEach((input) => {
+    input.onchange = () => {
+      const disasters: Record<string, boolean> = {};
+      box.querySelectorAll<HTMLInputElement>('input').forEach((x) => {
+        disasters[x.dataset.disaster!] = x.checked;
+      });
+      post({ type: 'options', disasters });
+    };
+  });
 }
 
 function buildTaxes(): void {
@@ -455,7 +514,15 @@ function applyAt(cell: { x: number; y: number }): void {
 
 window.addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
-  if (e.key === 'Escape' && manualOpen()) { closeManual(); return; }
+  if (e.key === 'Escape') {
+    if (achievementsOpen()) { closeAchievements(); return; }
+    if (manualOpen()) { closeManual(); return; }
+  }
+  if (e.key === 'a' || e.key === 'A') {
+    achievementsOpen() ? closeAchievements() : openAchievements();
+    return;
+  }
+  if (achievementsOpen()) return;
   if (e.key === '?' || e.key === 'h' || e.key === 'H') {
     manualOpen() ? closeManual() : openManual();
     return;
@@ -526,9 +593,18 @@ function updateHud(s: Snapshot): void {
 
   applyLocks(s);
 
-  $('fire-note').textContent = s.firesTotal === 0
-    ? (s.firesEnabled ? 'No fires yet.' : 'Fires are off.')
-    : `${s.firesTotal} fire${s.firesTotal === 1 ? '' : 's'}, ${s.tilesLostToFire} buildings lost.`;
+  if (s.earned.length !== earned.size) {
+    earned = new Set(s.earned);
+    if (achievementsOpen()) renderAchievements();
+  }
+
+  const struck = DISASTERS
+    .map((d) => ({ d, n: s.disasterCounts[d.key] ?? 0 }))
+    .filter((x) => x.n > 0);
+  $('disaster-note').textContent = struck.length === 0
+    ? (DISASTERS.every((d) => !s.disasters[d.key]) ? 'Disasters are off.' : 'Nothing has gone wrong yet.')
+    : `${struck.map((x) => `${x.n} ${x.d.label.toLowerCase()}`).join(', ')} — ` +
+      `${s.tilesLostToDisaster.toLocaleString()} buildings lost.`;
 
   const ticker = $('ticker');
   ticker.innerHTML = s.messages.slice(0, 3).map((m) => `<div>${m}</div>`).join('');
@@ -632,6 +708,7 @@ worker.onmessage = (e: MessageEvent<FromWorker>) => {
     camera = new Camera(msg.width, msg.height);
     renderer = new CityRenderer(msg.width);
     renderer.setTerrain(msg.water, msg.shore, msg.terrainHeight);
+    terrainLayers = { floodRisk: msg.floodRisk };
     fit();
   } else if (msg.type === 'frame') {
     snap = msg;
@@ -689,6 +766,7 @@ function frame(): void {
 
 buildTools();
 buildManualUi();
+buildAchievementsUi();
 buildChart();
 buildSpeeds();
 buildLayers();

@@ -116,11 +116,17 @@ space-drag to pan.
 - **Dirty-chunk simulation** — a field is only recomputed where its source changed, which
   is sound because every diffused field is a pure function of its source. A test runs the
   incremental path and a full recompute side by side and asserts they agree bit for bit.
+- **Disasters** — fire, floods, earthquakes and tornadoes, each switchable on its own.
+  Flood risk is fixed by the terrain and shown as a data layer, so it is genuinely
+  avoidable: build uphill and you will never flood.
+- **Achievements** — 24 of them across growth, economy, infrastructure, environment and
+  adversity. Press `A`. Locked ones show what they need, because one you can't see isn't
+  something you can aim at.
 - **Benchmark harness** — synthetic city generator for any tier, written before any
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 87 tests
+npm test          # 108 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 

@@ -193,7 +193,7 @@ test('removing a road leaves zoning and buildings intact', () => {
 
 test('ticker messages expire instead of sticking forever', () => {
   const c = buildTestCity();
-  c.firesEnabled = false; // fires post their own messages; isolate what's under test
+  c.setDisasters(false); // fires post their own messages; isolate what's under test
   c.pushMessage('transient complaint');
   assert.deepEqual(c.activeMessages(), ['transient complaint']);
   for (let t = 0; t < MESSAGE_TTL + 5; t++) c.step();
@@ -286,7 +286,7 @@ test('fire coverage suppresses fire risk', () => {
   // Regression: fireCover was consumed by NOTHING. Fire stations cost $100/mo and had
   // no effect on anything in the simulation.
   const c = buildTestCity();
-  c.firesEnabled = false; // measuring risk, not rolling for ignition
+  c.setDisasters(false); // measuring risk, not rolling for ignition
   for (let t = 0; t < 200; t++) c.step();
 
   const risk = c.fields.get('fireRisk');
@@ -307,20 +307,20 @@ test('fire coverage suppresses fire risk', () => {
 
 test('fires can be switched off entirely', () => {
   const c = buildTestCity();
-  c.firesEnabled = false;
+  c.setDisasters(false);
   for (let t = 0; t < 1500; t++) c.step();
-  assert.equal(c.firesTotal, 0, 'no fires should occur while disabled');
+  assert.equal(c.disasterCounts.fire, 0, 'no fires should occur while disabled');
 });
 
 test('an unprotected city does eventually burn, a covered one much less', () => {
   const exposed = buildTestCity();
   for (let t = 0; t < 6000; t++) exposed.step();
-  assert.ok(exposed.firesTotal > 0, 'an uncovered city should see fires over time');
+  assert.ok(exposed.disasterCounts.fire > 0, 'an uncovered city should see fires over time');
 });
 
 test('the history graph records one sample per month', () => {
   const c = buildTestCity();
-  c.firesEnabled = false;
+  c.setDisasters(false);
   const months = 25;
   for (let t = 0; t < TICKS_PER_MONTH * months; t++) c.step();
   for (const s of SERIES) {
@@ -337,7 +337,7 @@ test('series averages cover developed land, not the whole map', () => {
   // Averaging over the entire map would drown every series in empty countryside and
   // each one would read as a flat line near zero.
   const c = buildTestCity();
-  c.firesEnabled = false;
+  c.setDisasters(false);
   for (let t = 0; t < TICKS_PER_MONTH * 20; t++) c.step();
   const plane = c.fields.get('landValue');
   let builtSum = 0;
@@ -365,7 +365,7 @@ test('series averages cover developed land, not the whole map', () => {
 
 test('history is bounded to the retention limit', () => {
   const c = buildTestCity();
-  c.firesEnabled = false;
+  c.setDisasters(false);
   for (let t = 0; t < TICKS_PER_MONTH * (HISTORY_LIMIT + 30); t++) c.step();
   for (const s of SERIES) {
     assert.equal(c.series[s.key].length, HISTORY_LIMIT, `${s.key} exceeded the retention limit`);

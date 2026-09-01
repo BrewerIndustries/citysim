@@ -18,9 +18,10 @@ export interface Snapshot {
   tax: { r: number; c: number; i: number };
   messages: string[];
   simMs: number;
-  firesEnabled: boolean;
-  firesTotal: number;
-  tilesLostToFire: number;
+  disasters: Record<string, boolean>;
+  disasterCounts: Record<string, number>;
+  tilesLostToDisaster: number;
+  earned: string[];
   canUndo: boolean;
   canRedo: boolean;
   undoLabel: string;
@@ -48,6 +49,7 @@ export interface ReadyMsg {
   water: Uint8Array;
   shore: Uint8Array;
   terrainHeight: Uint8Array;
+  floodRisk: Uint8Array;
 }
 
 export interface InspectMsg {
@@ -66,7 +68,7 @@ export type ToWorker =
   | { type: 'layer'; layer: string | null }
   | { type: 'inspect'; index: number }
   | { type: 'tax'; tax: { r: number; c: number; i: number } }
-  | { type: 'options'; firesEnabled: boolean }
+  | { type: 'options'; disasters: Record<string, boolean> }
   | { type: 'save'; slot: string }
   | { type: 'load'; slot: string; bytes: Uint8Array }
   | { type: 'new'; size: number; seed: number; mapSeed: number }

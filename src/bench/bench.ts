@@ -69,7 +69,7 @@ for (const key of wanted) {
   const growing = timeTicks(city, ticks);
 
   // Settled: freeze the city so nothing changes and only the fixed costs remain.
-  city.firesEnabled = false;
+  for (const k of Object.keys(city.disasters)) city.disasters[k] = false;
   const demand = { r: -1, c: -1, i: -1 };
   Object.defineProperty(city, 'demand', { get: () => demand, set: () => {}, configurable: true });
   for (let i = 0; i < 20; i++) city.step();

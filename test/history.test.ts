@@ -133,7 +133,7 @@ test('history is bounded', () => {
 
 test('undo works on a running city and the simulation keeps up', () => {
   const c = new City(128, 1, FLAT_MAP);
-  c.firesEnabled = false;
+  c.setDisasters(false);
   const g = c.grid;
   c.beginStroke('a', 'Build');
   for (let x = 8; x < 110; x++) c.buildRoad(g.index(x, 40));

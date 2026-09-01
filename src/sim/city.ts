@@ -12,6 +12,8 @@ import { PowerGrid, type PowerReport } from './power.ts';
 import { stepGrowth, tallyCity, requiredDesirability, type GrowthStats } from './growth.ts';
 import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
 import { updateFireRisk, stepFires } from './fire.ts';
+import { stepDisasters, DISASTERS } from './disasters.ts';
+import { ACHIEVEMENTS, snapshotFor } from './achievements.ts';
 import { History } from './history.ts';
 import { Terrain } from './terrain.ts';
 import { lockReason, unlockedIds, type UnlockState } from './unlocks.ts';
@@ -67,10 +69,19 @@ export class City {
   power: PowerReport = { supply: 0, demand: 0, litCells: 0, unservedCells: 0, brownout: false };
   ledger: Ledger = { taxR: 0, taxC: 0, taxI: 0, upkeepCivic: 0, upkeepRoads: 0, net: 0 };
   bankrupt = false;
-  /** Disasters can be switched off; some players want a pure builder. */
-  firesEnabled = true;
-  firesTotal = 0;
-  tilesLostToFire = 0;
+  /** Sticky: needed by the 'back from the brink' achievement. */
+  wasBankrupt = false;
+  /** Months of unbroken surplus, for the 'prudent' achievement. */
+  consecutiveSurplusMonths = 0;
+  /** Ids of achievements earned. Never removed once granted. */
+  earned = new Set<string>();
+  /** Disasters can be switched off individually; some players want a pure builder. */
+  disasters: Record<string, boolean> = Object.fromEntries(DISASTERS.map((d) => [d.key, true]));
+  /** How many of each have struck, and what they cost. Feeds achievements. */
+  disasterCounts: Record<string, number> = Object.fromEntries(DISASTERS.map((d) => [d.key, 0]));
+  tilesLostToDisaster = 0;
+  /** Test hook: multiplies disaster frequency. 1 is the real game. */
+  disasterRateScale = 1;
   /** Progression is measured against the high-water mark, never the current figure. */
   peakPopulation = 0;
   everBuilt = new Set<number>();
@@ -187,16 +198,26 @@ export class City {
       );
     });
     this.phase('fireRisk', () => updateFireRisk(this.fields, this.tiles));
-    if (this.firesEnabled) {
+    if (this.disasters.fire) {
       for (const f of stepFires(this.grid, this.fields, this.tiles, this.rngFire, this.stats.developedCells, this.changes)) {
-        this.firesTotal++;
-        this.tilesLostToFire += f.burned;
+        this.disasterCounts.fire++;
+        this.tilesLostToDisaster += f.burned;
         this.pushMessage(
           f.burned > 1
             ? `Fire at ${f.x}, ${f.y} — ${f.burned} buildings lost. Check fire coverage.`
             : `Fire at ${f.x}, ${f.y}. Check fire coverage.`,
         );
       }
+    }
+    for (const e of stepDisasters({
+      grid: this.grid, tiles: this.tiles, fields: this.fields, terrain: this.terrain,
+      rng: this.rngFire, changes: this.changes,
+      developedCells: this.stats.developedCells, enabled: this.disasters,
+      rateScale: this.disasterRateScale,
+    })) {
+      this.disasterCounts[e.key]++;
+      this.tilesLostToDisaster += e.destroyed;
+      this.pushMessage(e.message);
     }
 
     this.demand = computeDemand(
@@ -239,6 +260,8 @@ export class City {
       pollution: this.averageOverBuilt('pollution'),
     });
 
+    this.checkAchievements();
+
     if (this.stats.population > this.peakPopulation) {
       this.peakPopulation = this.stats.population;
       this.refreshUnlocks(true);
@@ -247,8 +270,11 @@ export class City {
     this.month++;
     if (this.month >= 12) { this.month = 0; this.year++; }
 
+    this.consecutiveSurplusMonths = l.net > 0 ? this.consecutiveSurplusMonths + 1 : 0;
+
     if (this.funds < 0 && !this.bankrupt) {
       this.bankrupt = true;
+      this.wasBankrupt = true;
       this.pushMessage('The city is in the red. Raise taxes or cut services.');
     } else if (this.funds >= 0 && this.bankrupt) {
       this.bankrupt = false;
@@ -284,6 +310,27 @@ export class City {
       n++;
     }
     return n === 0 ? 0 : sum / n;
+  }
+
+  /** Turn every disaster on or off at once. */
+  setDisasters(on: boolean): void {
+    for (const d of DISASTERS) this.disasters[d.key] = on;
+  }
+
+  /**
+   * Evaluated once a month rather than per tick: every predicate is a threshold on
+   * figures that only move meaningfully over months, and the shared snapshot walks the
+   * map once.
+   */
+  private checkAchievements(): void {
+    if (this.earned.size === ACHIEVEMENTS.length) return;
+    const snap = snapshotFor(this);
+    for (const a of ACHIEVEMENTS) {
+      if (this.earned.has(a.id)) continue;
+      if (!a.test(this, snap)) continue;
+      this.earned.add(a.id);
+      this.pushMessage(`Achievement: ${a.name} — ${a.description}`);
+    }
   }
 
   get unlockState(): UnlockState {

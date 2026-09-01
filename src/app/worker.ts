@@ -38,7 +38,7 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       if (city) city.tax = msg.tax;
       break;
     case 'options':
-      if (city) city.firesEnabled = msg.firesEnabled;
+      if (city) city.disasters = { ...city.disasters, ...msg.disasters };
       break;
     case 'inspect':
       if (city) self.postMessage({ type: 'inspect', cell: city.inspect(msg.index) });
@@ -103,9 +103,10 @@ function postReady(c: City): void {
   const water = new Uint8Array(c.terrain.water);
   const shore = new Uint8Array(c.terrain.shore);
   const terrainHeight = new Uint8Array(c.terrain.height);
+  const floodRisk = new Uint8Array(c.terrain.floodRisk);
   self.postMessage(
-    { type: 'ready', width: c.grid.width, height: c.grid.height, water, shore, terrainHeight },
-    [water.buffer, shore.buffer, terrainHeight.buffer],
+    { type: 'ready', width: c.grid.width, height: c.grid.height, water, shore, terrainHeight, floodRisk },
+    [water.buffer, shore.buffer, terrainHeight.buffer, floodRisk.buffer],
   );
 }
 
@@ -155,9 +156,10 @@ function loop(): void {
     demand: c.demand, stats: c.stats, power: c.power, ledger: c.ledger, tax: c.tax,
     messages: c.activeMessages(3),
     simMs,
-    firesEnabled: c.firesEnabled,
-    firesTotal: c.firesTotal,
-    tilesLostToFire: c.tilesLostToFire,
+    disasters: { ...c.disasters },
+    disasterCounts: { ...c.disasterCounts },
+    tilesLostToDisaster: c.tilesLostToDisaster,
+    earned: [...c.earned],
     canUndo: c.history.canUndo,
     canRedo: c.history.canRedo,
     undoLabel: c.history.undoLabel,

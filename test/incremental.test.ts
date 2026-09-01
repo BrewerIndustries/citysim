@@ -43,7 +43,7 @@ const spine = (c: City) => {
 
 test('incremental fields match a full recompute: growth from nothing', () => {
   compare((c) => {
-    c.firesEnabled = false;
+    c.setDisasters(false);
     spine(c);
     for (let y = 37; y < 40; y++) for (let x = 20; x < 60; x++) c.paintZone(c.grid.index(x, y), ZONE_RES, 0);
     for (let y = 41; y < 44; y++) for (let x = 20; x < 60; x++) c.paintZone(c.grid.index(x, y), ZONE_COM, 0);
@@ -54,7 +54,7 @@ test('incremental fields match a full recompute: growth from nothing', () => {
 test('incremental fields match a full recompute: building while running', () => {
   // Sources change mid-flight, which is exactly when a missed mark would show up.
   compare((c) => {
-    c.firesEnabled = false;
+    c.setDisasters(false);
     spine(c);
     for (let t = 0; t < 40; t++) c.step();
     for (let y = 37; y < 40; y++) for (let x = 20; x < 60; x++) c.paintZone(c.grid.index(x, y), ZONE_RES, 0);
@@ -68,7 +68,7 @@ test('incremental fields match a full recompute: building while running', () => 
 
 test('incremental fields match a full recompute: demolition and rezoning', () => {
   compare((c) => {
-    c.firesEnabled = false;
+    c.setDisasters(false);
     spine(c);
     for (let y = 37; y < 40; y++) for (let x = 20; x < 60; x++) c.paintZone(c.grid.index(x, y), ZONE_RES, 0);
     for (let t = 0; t < 120; t++) c.step();
@@ -83,7 +83,7 @@ test('incremental fields match a full recompute: demolition and rezoning', () =>
 
 test('incremental fields match a full recompute: undo and redo', () => {
   compare((c) => {
-    c.firesEnabled = false;
+    c.setDisasters(false);
     c.beginStroke('a', 'Build');
     spine(c);
     c.endStroke();
@@ -110,7 +110,7 @@ test('incremental fields match a full recompute: fires burning buildings', () =>
 test('incremental fields match a full recompute: random churn', () => {
   // Adversarial: scatter changes everywhere so no single dirty rect can cover them.
   compare((c) => {
-    c.firesEnabled = false;
+    c.setDisasters(false);
     c.funds = 5_000_000;
     spine(c);
     const rng = new Rng(99);

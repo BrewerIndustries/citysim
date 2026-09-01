@@ -21,6 +21,7 @@
           <div class="rci-labels"><b>R</b><b>C</b><b>I</b></div>
         </div>
         <div class="speeds" id="speeds"></div>
+        <button id="ach-open" class="help" title="Achievements (A)" aria-label="Achievements">★</button>
         <button id="manual-open" class="help" title="Manual (? or H)" aria-label="Open the manual">?</button>
       </header>
 
@@ -48,6 +49,16 @@
           <div class="layers" id="layers"></div>
         </section>
         <section>
+          <h2>Budget</h2>
+          <dl class="stats" id="budget"></dl>
+          <div class="taxes" id="taxes"></div>
+        </section>
+        <section>
+          <h2>Disasters</h2>
+          <div id="disaster-opts"></div>
+          <p class="opt-note" id="disaster-note">Nothing has gone wrong yet.</p>
+        </section>
+        <section>
           <h2>City</h2>
           <div class="rowbtns">
             <button id="btn-undo" title="Undo (Cmd/Ctrl+Z)">Undo</button>
@@ -61,18 +72,18 @@
           <label class="toggle"><input type="checkbox" id="opt-flat"> <span>New map is flat (no water)</span></label>
           <p class="opt-note" id="save-note">—</p>
         </section>
-        <section>
-          <h2>Options</h2>
-          <label class="toggle"><input type="checkbox" id="opt-fires" checked>
-            <span>Fires</span></label>
-          <p class="opt-note" id="fire-note">No fires yet.</p>
-        </section>
-        <section>
-          <h2>Budget</h2>
-          <dl class="stats" id="budget"></dl>
-          <div class="taxes" id="taxes"></div>
-        </section>
       </aside>
+    </div>
+
+    <div id="achievements" hidden>
+      <div class="manual-backdrop" data-close-ach></div>
+      <div class="manual-dialog" role="dialog" aria-modal="true" aria-label="Achievements">
+        <header>
+          <h1>Achievements <span id="ach-count" class="tag"></span></h1>
+          <button id="ach-close" aria-label="Close">✕</button>
+        </header>
+        <div class="ach-body" id="ach-body"></div>
+      </div>
     </div>
 
     <div id="manual" hidden>

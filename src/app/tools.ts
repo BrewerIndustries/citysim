@@ -16,13 +16,22 @@ export interface Tool {
 }
 
 /**
- * Shortcut keys, in rail order. Digits first, then a home-row run — with seven civic
- * buildings the list runs past 9, and `String(8 + n)` was silently handing out "10"
- * and "11", which no single keypress can produce.
+ * Keys the interface owns. Tools must never be assigned one of these.
+ *
+ * This bit us: once the tool list grew past the digits it started handing out letters,
+ * and 'p' went to the solar farm — which silently killed the pause shortcut, because
+ * the tool lookup runs first.
+ */
+export const RESERVED_KEYS = new Set(['p', 'h', 'a', '?', '[', ']', '=', '-', '+', '_']);
+
+/**
+ * Shortcut keys, in rail order. Digits first, then letters — skipping the reserved ones.
+ * (`String(8 + n)` used to hand out "10" and "11", which no single keypress produces.)
  */
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
-  'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p',
-  'a', 's', 'd', 'f', 'g'];
+  'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o',
+  's', 'd', 'f', 'g', 'z', 'x', 'c', 'v', 'b', 'n', 'm']
+  .filter((k) => !RESERVED_KEYS.has(k));
 
 /** Which rail section each building belongs to. */
 const GROUP_OF: Record<string, string> = {
