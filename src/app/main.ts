@@ -2,7 +2,7 @@ import './style.css';
 import { Camera } from './camera.ts';
 import { CityRenderer, type Overlay } from './render.ts';
 import { View3D } from './view3d.ts';
-import { LAYERS, RAMPS, buildLut } from './palette.ts';
+import { LAYERS, RAMPS, buildLut, toggleLayer } from './palette.ts';
 import {
   TOOLS, DENSITY_LABELS, DRAW_MODES, lineCells, brushCells, rectCells, anchorFor, modesFor,
   type Tool, type DrawMode,
@@ -61,8 +61,11 @@ let drawMode: DrawMode = 'pencil';
 const modeByKind = new Map<string, DrawMode>();
 /** Cells a line/rectangle drag would affect, previewed until the button is released. */
 let preview: number[] = [];
-let layerIndex = -1;
-let overlay: Overlay | null = null;
+/** Indices into LAYERS, in the order they were switched on. Empty means no overlay. */
+let activeLayers: number[] = [];
+/** Whether clicking a layer adds to the selection or replaces it. */
+let multiLayers = false;
+let overlays: Overlay[] = [];
 let hover: { x: number; y: number } | null = null;
 /**
  * Overlays backed by terrain rather than by a simulation field. Terrain never changes
@@ -168,9 +171,15 @@ function applyLocks(s: Snapshot): void {
   if (tool.civicId && !unlocked.has(tool.civicId)) selectTool(TOOLS[0]);
 }
 
+/**
+ * Picking up a network tool shows that network. In multi-select this adds it to what is
+ * already up rather than throwing away the view you were working with — reaching for the
+ * sewer tool while watching the water layer is exactly when you want both.
+ */
 function showNetworkLayer(field: string): void {
   const idx = LAYERS.findIndex((l) => l.field === field);
-  if (idx >= 0 && layerIndex !== idx) setLayer(idx);
+  if (idx < 0 || activeLayers.includes(idx)) return;
+  setLayers(multiLayers ? toggleLayer(activeLayers, idx, true) : [idx]);
 }
 
 function selectTool(t: Tool): void {
@@ -227,35 +236,92 @@ function buildLayers(): void {
   const el = $('layers');
   el.innerHTML = '';
   const none = document.createElement('button');
+  none.id = 'layer-none';
   none.textContent = 'None';
   none.setAttribute('aria-pressed', 'true');
-  none.onclick = () => setLayer(-1);
+  none.onclick = () => setLayers([]);
   el.appendChild(none);
   LAYERS.forEach((l, i) => {
     const b = document.createElement('button');
+    b.dataset.layer = String(i);
     b.textContent = l.label.replace(/^Desirability — /, 'Des. ');
-    b.onclick = () => setLayer(i);
+    b.onclick = () => setLayers(toggleLayer(activeLayers, i, multiLayers));
     el.appendChild(b);
   });
+
+  // The toggle lives under the list rather than in it, so it can never be mistaken for
+  // a layer. Off, the list behaves exactly as it always has.
+  const multi = $('layer-multi') as HTMLButtonElement;
+  multi.setAttribute('aria-pressed', String(multiLayers));
+  multi.onclick = () => {
+    multiLayers = !multiLayers;
+    multi.setAttribute('aria-pressed', String(multiLayers));
+    // Leaving multi-select with several layers up would strand a view you can no longer
+    // edit one layer at a time, so collapse to the most recent.
+    if (!multiLayers && activeLayers.length > 1) setLayers(activeLayers.slice(-1));
+    else renderLayerLegend();
+  };
 }
 
-function setLayer(i: number): void {
-  layerIndex = i;
-  const buttons = $('layers').querySelectorAll('button');
-  buttons.forEach((b, n) => b.setAttribute('aria-pressed', String(n === i + 1)));
-  if (i < 0) {
-    overlay = null;
-    post({ type: 'layer', layer: null });
-    renderer.setStaticLayer(null);
-    renderer.setNetwork(null);
-  } else {
+function setLayers(next: number[]): void {
+  activeLayers = next;
+  $('layer-none').setAttribute('aria-pressed', String(next.length === 0));
+  for (const b of document.querySelectorAll<HTMLElement>('#layers button[data-layer]')) {
+    const i = Number(b.dataset.layer);
+    b.setAttribute('aria-pressed', String(next.includes(i)));
     const l = LAYERS[i];
-    overlay = { lut: buildLut(RAMPS[l.ramp]), max: l.max, alpha: 0.68 };
-    const terrainLayer = terrainLayers[l.field];
-    renderer.setStaticLayer(terrainLayer ?? null);
-    renderer.setNetwork(l.network ?? null);
-    post({ type: 'layer', layer: terrainLayer || l.network ? null : l.field });
+    // In composite mode the swatch is the only thing tying a colour on the map back to
+    // the layer that produced it, so it is shown whenever more than one layer is up.
+    b.style.borderLeft = next.length > 1 && next.includes(i)
+      ? `3px solid rgb(${l.key[0]}, ${l.key[1]}, ${l.key[2]})` : '';
   }
+
+  const chosen = next.map((i) => LAYERS[i]);
+  renderer.setNetworks(chosen.flatMap((l) => (l.network ? [l.network] : [])));
+
+  // Terrain layers are already on this side; only true simulation fields are worth
+  // asking the worker to ship every frame.
+  const fields = chosen.filter((l) => !l.network && !terrainLayers[l.field]);
+  post({ type: 'layers', layers: fields.map((l) => l.field) });
+
+  rebuildOverlays();
+  renderLayerLegend();
+  applyOverlay3d(true);
+}
+
+/**
+ * Bind each selected layer to the array its values live in. Terrain layers are held
+ * locally and simulation fields arrive with the frame, so this has to be redone
+ * whenever a snapshot lands, not only when the selection changes.
+ */
+function rebuildOverlays(): void {
+  overlays = [];
+  for (const i of activeLayers) {
+    const l = LAYERS[i];
+    if (l.network) continue;
+    const data = terrainLayers[l.field] ?? dataForField(l.field);
+    if (!data) continue;
+    overlays.push({ data, lut: buildLut(RAMPS[l.ramp]), max: l.max, alpha: 0.68, key: l.key });
+  }
+}
+
+function dataForField(field: string): Float32Array | null {
+  if (!snap) return null;
+  const n = snap.layerNames.indexOf(field);
+  return n >= 0 ? snap.layers[n] : null;
+}
+
+function renderLayerLegend(): void {
+  const el = $('layer-legend');
+  if (activeLayers.length < 2) { el.innerHTML = ''; el.hidden = true; return; }
+  el.hidden = false;
+  const fields = activeLayers.filter((i) => !LAYERS[i].network);
+  el.innerHTML = (fields.length > 1
+    ? '<p>Each cell is coloured by whichever of these is strongest there.</p>' : '')
+    + activeLayers.map((i) => {
+      const l = LAYERS[i];
+      return `<span><i style="background: rgb(${l.key[0]}, ${l.key[1]}, ${l.key[2]})"></i>${l.label}</span>`;
+    }).join('');
 }
 
 // ---------------------------------------------------------------- achievements
@@ -895,6 +961,12 @@ worker.onmessage = (e: MessageEvent<FromWorker>) => {
     fit();
   } else if (msg.type === 'frame') {
     snap = msg;
+    // Field planes are new objects every frame, so the overlays have to be re-bound to
+    // them or the renderer would keep drawing the first frame it ever saw. The guard is
+    // on the SELECTION, not on `overlays`: the frame that first carries a newly chosen
+    // field is the one that lets it bind, and testing `overlays.length` there would
+    // never let the first layer in.
+    if (activeLayers.length) rebuildOverlays();
     if (viewMode === 'iso') applyOverlay3d();
     if (msg.series) {
       series = msg.series;
@@ -932,7 +1004,9 @@ worker.onmessage = (e: MessageEvent<FromWorker>) => {
 if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__citysim = {
     get snap() { return snap; },
-    get overlay() { return overlay; },
+    get overlays() { return overlays; },
+    get activeLayers() { return activeLayers.map((i) => LAYERS[i].field); },
+    get multiLayers() { return multiLayers; },
     get camera() { return camera; },
     get tool() { return tool; },
     get renderer() { return renderer; },
@@ -960,10 +1034,11 @@ function applyOverlay3d(force = false): void {
   // for a field that moves over months.
   if (!force && now - overlayDirtyAt < 400) return;
   overlayDirtyAt = now;
-  if (layerIndex < 0 || !overlay) { view3d.setGroundOverlay(null, null, 1); return; }
-  const l = LAYERS[layerIndex];
-  const data = terrainLayers[l.field] ?? snap.layer;
-  view3d.setGroundOverlay(data ?? null, overlay.lut, overlay.max);
+  // The ground plane takes a single ramp, so a composite selection shows its first
+  // field layer here rather than inventing a blend the plan view doesn't use.
+  const o = overlays[0];
+  if (!o) { view3d.setGroundOverlay(null, null, 1); return; }
+  view3d.setGroundOverlay(o.data, o.lut, o.max);
 }
 
 function setViewMode(mode: ViewMode): void {
@@ -989,7 +1064,7 @@ function frame(): void {
   // is a normal state, not an error. Render nothing rather than throwing every frame.
   if (snap && vw > 4 && vh > 4) {
     if (viewMode === 'plan') {
-      renderer.draw(ctx, vw, vh, snap, camera, overlay, hover, brush, preview);
+      renderer.draw(ctx, vw, vh, snap, camera, overlays, hover, brush, preview);
     } else {
       const v = ensure3d();
       if (v) {
@@ -1003,13 +1078,15 @@ function frame(): void {
   requestAnimationFrame(frame);
 }
 
+// Layers before tools: picking up a network tool shows its layer, so the layer list has
+// to exist before the first tool is selected.
+buildLayers();
 buildTools();
 $('view-toggle').onclick = () => setViewMode(viewMode === 'plan' ? 'iso' : 'plan');
 buildManualUi();
 buildAchievementsUi();
 buildChart();
 buildSpeeds();
-buildLayers();
 buildOptions();
 buildSaveUi();
 buildTaxes();

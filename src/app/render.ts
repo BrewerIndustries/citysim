@@ -19,10 +19,16 @@ import {
 import { SEA_LEVEL } from '../sim/terrain.ts';
 import { CIVIC_BY_ID } from '../sim/tiles.ts';
 
+/**
+ * One data layer ready to draw: where its values come from, how to scale them, the ramp
+ * to use on its own, and the identity colour to use when it is one of several.
+ */
 export interface Overlay {
+  data: ArrayLike<number>;
   lut: Uint8ClampedArray;
   max: number;
   alpha: number;
+  key: readonly [number, number, number];
 }
 
 export class CityRenderer {
@@ -35,8 +41,7 @@ export class CityRenderer {
 
   private readonly gridWidth: number;
   private terrain: { water: Uint8Array; shore: Uint8Array; height: Uint8Array } | null = null;
-  private staticLayer: Uint8Array | null = null;
-  private network: 'power' | 'water' | 'sewer' | null = null;
+  private networks: ReadonlyArray<'power' | 'water' | 'sewer'> = [];
 
   constructor(gridWidth: number) {
     this.gridWidth = gridWidth;
@@ -49,19 +54,16 @@ export class CityRenderer {
     this.terrain = { water, shore, height };
   }
 
-  /** An overlay whose data comes from terrain rather than from a simulation field. */
-  setStaticLayer(data: Uint8Array | null): void {
-    this.staticLayer = data;
-  }
-
   /**
-   * Show a utility network instead of a field overlay.
+   * Show utility networks instead of a field overlay. More than one may be shown at
+   * once, which is the view you want when checking whether a street carries everything
+   * it should.
    *
    * These are drawn from the tile planes rather than sampled from a diffused field,
    * because a pipe is a thing you laid, not a value that spread.
    */
-  setNetwork(kind: 'power' | 'water' | 'sewer' | null): void {
-    this.network = kind;
+  setNetworks(kinds: ReadonlyArray<'power' | 'water' | 'sewer'>): void {
+    this.networks = kinds;
   }
 
   private ensure(w: number, h: number): void {
@@ -79,7 +81,7 @@ export class CityRenderer {
     vw: number, vh: number,
     snap: Snapshot,
     cam: Camera,
-    overlay: Overlay | null,
+    overlays: ReadonlyArray<Overlay>,
     hover: { x: number; y: number } | null,
     brush: number,
     preview: number[] = [],
@@ -90,9 +92,12 @@ export class CityRenderer {
     const gw = this.gridWidth;
     const {
       zone, density, road, level, civic, powered, watered, sewered,
-      powerLine, pipe, sewer, layer,
+      powerLine, pipe, sewer,
     } = snap;
-    const net = this.network;
+    const nets = this.networks;
+    // Hoisted out of the pixel loop: these decide the branch taken for every cell.
+    const solo = overlays.length === 1 ? overlays[0] : null;
+    const multi = overlays.length > 1 ? overlays : null;
 
     for (let y = 0; y < r.h; y++) {
       const srcRow = (r.y0 + y) * gw;
@@ -134,39 +139,71 @@ export class CityRenderer {
           c = mix(c, 0xff000000 | 0x00ffffff, Math.max(0, Math.min(0.16, lift * 0.16)));
         }
 
-        if (net) {
+        if (nets.length) {
           // Network view: the source, the conductor, the land it reaches, and — in red —
-          // anything built that the network is failing to serve.
-          const conductor = net === 'power' ? powerLine[i] : net === 'water' ? pipe[i] : sewer[i];
-          const served = net === 'power' ? powered[i] : net === 'water' ? watered[i] : sewered[i];
-          const def = civic[i] ? CIVIC_BY_ID.get(civic[i]) : undefined;
-          const isSource = net === 'power' ? !!def?.supply
-            : net === 'water' ? !!def?.water
-            : !!def?.sewage;
-          if (isSource) {
+          // anything built that the network is failing to serve. With several networks
+          // shown at once the strongest statement wins: an unserved building is more
+          // urgent than a conductor, and a conductor than mere reach, so a tile that is
+          // piped on one network and stranded on another reads as stranded.
+          let mark = 0;
+          let line = 0;
+          let dead = false;
+          let reach = 0;
+          for (const net of nets) {
+            const conductor = net === 'power' ? powerLine[i] : net === 'water' ? pipe[i] : sewer[i];
+            const served = net === 'power' ? powered[i] : net === 'water' ? watered[i] : sewered[i];
+            const def = civic[i] ? CIVIC_BY_ID.get(civic[i]) : undefined;
+            const isSource = net === 'power' ? !!def?.supply
+              : net === 'water' ? !!def?.water
+              : !!def?.sewage;
             // Picked out in white: this is the thing the network has to reach, and an
             // unattached one is the single most confusing state to be in.
-            c = SOURCE_MARK;
-          } else if (conductor) {
-            c = net === 'power' ? POWER_LINE : net === 'water' ? PIPE_LINE : SEWER_LINE;
-          } else if (level[i] > 0 && !served) {
-            c = DEAD_UTILITY;
-          } else if (served) {
-            c = mix(c, net === 'power' ? POWER_REACH : net === 'water' ? PIPE_REACH : SEWER_REACH, 0.55);
+            if (isSource) mark = SOURCE_MARK;
+            else if (conductor) {
+              const col = net === 'power' ? POWER_LINE : net === 'water' ? PIPE_LINE : SEWER_LINE;
+              // Where two conductors share a tile — a sewer crossing a water main — the
+              // colours average, so crossings are visibly not plain runs of either.
+              line = line ? mix(line, col, 0.5) : col;
+            } else if (level[i] > 0 && !served) dead = true;
+            else if (served) {
+              const col = net === 'power' ? POWER_REACH : net === 'water' ? PIPE_REACH : SEWER_REACH;
+              reach = reach ? mix(reach, col, 0.5) : col;
+            }
           }
+          if (mark) c = mark;
+          else if (dead) c = DEAD_UTILITY;
+          else if (line) c = line;
+          else if (reach) c = mix(c, reach, 0.55);
           px[dstRow + x] = c;
           continue;
         }
 
-        const source = this.staticLayer ?? layer;
-        if (overlay && source) {
-          const v = Math.max(0, Math.min(255, (source[i] / overlay.max) * 255)) | 0;
+        // Infrastructure takes a lighter wash than open land, so the street grid and
+        // civic buildings stay readable underneath a data view. Without this the
+        // overlay drowns the city and you can't tell where you are on the map.
+        const wash = (road[i] || civic[i]) ? 0.45 : 1;
+
+        if (solo) {
+          const v = Math.max(0, Math.min(255, (solo.data[i] / solo.max) * 255)) | 0;
           const o = v * 4;
-          // Infrastructure takes a lighter wash than open land, so the street grid and
-          // civic buildings stay readable underneath a data view. Without this the
-          // overlay drowns the city and you can't tell where you are on the map.
-          const a = (road[i] || civic[i]) ? overlay.alpha * 0.45 : overlay.alpha;
-          c = blend(c, overlay.lut[o], overlay.lut[o + 1], overlay.lut[o + 2], a);
+          c = blend(c, solo.lut[o], solo.lut[o + 1], solo.lut[o + 2], solo.alpha * wash);
+        } else if (multi) {
+          // With several layers up, a shared ramp would make them indistinguishable, so
+          // each cell is painted by whichever layer is strongest there, in that layer's
+          // own colour, at an intensity that is its own value. The question it answers
+          // is "which of these is the dominant pressure here", which is the question you
+          // open several layers to ask.
+          let best = 0;
+          let bestKey: readonly [number, number, number] | null = null;
+          let bestAlpha = 0;
+          for (const o of multi) {
+            const v = o.data[i] / o.max;
+            if (v > best) { best = v; bestKey = o.key; bestAlpha = o.alpha; }
+          }
+          if (bestKey && best > 0.02) {
+            const t = Math.min(1, best);
+            c = blend(c, bestKey[0], bestKey[1], bestKey[2], bestAlpha * wash * t);
+          }
         }
 
         px[dstRow + x] = c;

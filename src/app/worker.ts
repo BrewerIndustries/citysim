@@ -13,7 +13,7 @@ import type { ToWorker, Snapshot } from './protocol.ts';
 
 let city: City | null = null;
 let stepsPerSecond = 4;
-let layerName: string | null = null;
+let layerNames: string[] = [];
 let simMs = 0;
 let accumulator = 0;
 let lastSeriesMonth = -1;
@@ -31,8 +31,8 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     case 'speed':
       stepsPerSecond = msg.stepsPerSecond;
       break;
-    case 'layer':
-      layerName = msg.layer;
+    case 'layers':
+      layerNames = msg.layers;
       break;
     case 'tax':
       if (city) city.tax = msg.tax;
@@ -122,7 +122,18 @@ function apply(c: City, a: import('./protocol.ts').Action): void {
   switch (a.kind) {
     case 'road': for (const i of a.cells) c.buildRoad(i); break;
     case 'removeroad': for (const i of a.cells) c.removeRoad(i); break;
-    case 'utility': for (const i of a.cells) c.buildUtility(i, a.utility); break;
+    case 'utility': {
+      // A drag that is silently partly refused is the worst outcome: you pay for the
+      // tiles that landed, get a dotted line that carries nothing, and are told nothing.
+      // One message for the whole drag, naming the first real reason.
+      let blocked: string | null = null;
+      for (const i of a.cells) {
+        if (c.buildUtility(i, a.utility)) continue;
+        blocked ??= c.utilityBlockedBy(i, a.utility);
+      }
+      if (blocked) c.pushMessage(`Can't lay that here — ${blocked}.`);
+      break;
+    }
     case 'zone': for (const i of a.cells) c.paintZone(i, a.zone, a.density); break;
     case 'bulldoze': for (const i of a.cells) c.bulldoze(i); break;
     case 'civic': {
@@ -154,7 +165,7 @@ function loop(): void {
   }
 
   const t = c.tiles;
-  const layer = layerName ? new Float32Array(c.fields.get(layerName as FieldName)) : null;
+  const layers = layerNames.map((n) => new Float32Array(c.fields.get(n as FieldName)));
   const snap: Snapshot = {
     type: 'frame',
     tick: c.tick, month: c.month, year: c.year, funds: c.funds,
@@ -186,7 +197,7 @@ function loop(): void {
     level: new Uint8Array(t.level),
     civic: new Uint8Array(t.civic),
     powered: new Uint8Array(t.powered),
-    layer, layerName,
+    layers, layerNames: [...layerNames],
   };
   lastSeriesMonth = c.month;
   const transfer: Transferable[] = [
@@ -195,7 +206,7 @@ function loop(): void {
     snap.powerLine.buffer, snap.pipe.buffer, snap.watered.buffer,
     snap.sewer.buffer, snap.sewered.buffer,
   ];
-  if (layer) transfer.push(layer.buffer);
+  for (const l of layers) transfer.push(l.buffer);
   self.postMessage(snap, transfer);
 
   setTimeout(loop, 33); // ~30 snapshots/sec

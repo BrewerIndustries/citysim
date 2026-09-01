@@ -16,7 +16,7 @@ import { NEUTRAL_TAX } from '../sim/demand.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { CELL_METRES } from '../sim/grid.ts';
 import { SHORE_AMENITY } from '../sim/city.ts';
-import { LAYERS } from './palette.ts';
+import { LAYERS, MAX_LAYERS } from './palette.ts';
 import { SERIES, HISTORY_LIMIT, type SeriesKey } from '../sim/history-series.ts';
 import { MAX_UNDO } from '../sim/history.ts';
 import { AUTOSAVE_MONTHS } from './autosave.ts';
@@ -441,6 +441,21 @@ export function buildManual(): ManualSection[] {
       html: `
         <p>The data layers are the fastest way to understand a problem you can't see. Roads and
         buildings stay visible underneath so you can keep your bearings.</p>
+        <h4>Showing more than one</h4>
+        <p><b>Combine</b>, above the layer list, lets you have up to ${MAX_LAYERS} layers up
+        at once. A single layer is drawn in its own ramp, dark to bright, which is the most
+        precise way to read one quantity. With several up, that would be unreadable — three
+        different nuisances share a ramp — so each layer gets an identity colour instead, and
+        <b>every cell is painted by whichever of the selected layers is strongest there</b>,
+        at that layer's own strength. The swatches beside the layer names are the key.</p>
+        <p>That answers a different question from a single layer. One layer asks "how much
+        pollution is there here"; several ask "is it pollution or crime that is holding this
+        district back". Pair a nuisance with the service meant to answer it — crime with
+        police coverage, pollution with cleanup coverage — and the cells still showing the
+        nuisance colour are the ones your services are not reaching.</p>
+        <p>The three network layers combine too, and cost nothing to stack because they are
+        drawn from what you built rather than sampled. Where two conductors share a tile the
+        colours average, so a sewer crossing a water main looks like neither on its own.</p>
         ${table(['Layer', 'Shows'], LAYERS.map((l) => [l.label, layerHint(l.field)]))}`,
     },
     {

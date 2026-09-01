@@ -44,8 +44,13 @@ export interface Snapshot {
   level: Uint8Array;
   civic: Uint8Array;
   powered: Uint8Array;
-  layer: Float32Array | null;
-  layerName: string | null;
+  /**
+  * The field planes for the currently selected data layers, in selection order, and
+  * their names. Several may be shown at once (see palette.ts MAX_LAYERS); network and
+  * terrain layers are drawn from data the client already holds and never appear here.
+  */
+  layers: Float32Array[];
+  layerNames: string[];
 }
 
 export interface ReadyMsg {
@@ -73,7 +78,7 @@ export type FromWorker = Snapshot | ReadyMsg | InspectMsg | SavedMsg | NoticeMsg
 export type ToWorker =
   | { type: 'init'; size: number; seed: number }
   | { type: 'speed'; stepsPerSecond: number }
-  | { type: 'layer'; layer: string | null }
+  | { type: 'layers'; layers: string[] }
   | { type: 'inspect'; index: number }
   | { type: 'tax'; tax: { r: number; c: number; i: number } }
   | { type: 'options'; disasters: Record<string, boolean> }

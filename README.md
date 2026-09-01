@@ -95,7 +95,11 @@ space-drag to pan.
   an attributed land-value breakdown. The terms are exported from the simulation itself
   (`LAND_VALUE_TERMS`) and pinned by a test, so the explanation cannot drift from the
   behaviour.
-- **14 data layers** over the city, with infrastructure kept legible underneath.
+- **21 data layers** over the city, with infrastructure kept legible underneath. **Combine**
+  shows up to four at once: one layer is drawn in its own dark-to-bright ramp, several are
+  drawn in identity colours with each cell taking whichever layer is strongest there. That
+  turns "how much crime is here" into "is it crime or pollution holding this district
+  back", and lets all three utility networks be checked in a single view.
 - **In-game manual** (`?`) whose every figure is read from the simulation constants rather
   than written out in prose, and pinned by tests — a manual that quotes hardcoded numbers
   goes quietly wrong the first time a constant is tuned.
@@ -153,7 +157,7 @@ space-drag to pan.
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 147 tests
+npm test          # 159 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 
