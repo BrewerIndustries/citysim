@@ -1,6 +1,7 @@
 import './style.css';
 import { Camera } from './camera.ts';
 import { CityRenderer, type Overlay } from './render.ts';
+import { View3D } from './view3d.ts';
 import { LAYERS, RAMPS, buildLut } from './palette.ts';
 import { TOOLS, DENSITY_LABELS, lineCells, brushCells, anchorFor, type Tool } from './tools.ts';
 import { REASON, REASON_TEXT, requiredDesirability } from '../sim/growth.ts';
@@ -27,7 +28,19 @@ const SPEEDS = [
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
 const canvas = $<HTMLCanvasElement>('view');
+const canvas3d = $<HTMLCanvasElement>('view3d');
 const ctx = canvas.getContext('2d')!;
+
+/**
+ * Two presentation modes over ONE simulation, as planned in docs/CAMERA-AND-ART.md.
+ * Plan Mode is the top-down schematic you build in; the ¾ view is for reading and
+ * admiring the city. Neither is a separate game — both consume the same snapshot.
+ */
+type ViewMode = 'plan' | 'iso';
+let viewMode: ViewMode = 'plan';
+let view3d: View3D | null = null;
+let terrain3d: { water: Uint8Array; shore: Uint8Array; height: Uint8Array; floodRisk: Uint8Array } | null = null;
+let overlayDirtyAt = 0;
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
 
 let camera = new Camera(MAP_SIZE, MAP_SIZE);
@@ -401,7 +414,10 @@ let spaceDown = false;
 let lastCell: { x: number; y: number } | null = null;
 let lastPan = { x: 0, y: 0 };
 
-function viewSize(): [number, number] { return [canvas.width, canvas.height]; }
+function viewSize(): [number, number] {
+  const c = viewMode === 'plan' ? canvas : canvas3d;
+  return [c.width, c.height];
+}
 
 /**
  * Pointer position in CANVAS pixels.
@@ -412,44 +428,64 @@ function viewSize(): [number, number] { return [canvas.width, canvas.height]; }
  * scales correctly at any devicePixelRatio.
  */
 function pointerPos(e: PointerEvent | WheelEvent): { x: number; y: number } {
-  const r = canvas.getBoundingClientRect();
+  const c = viewMode === 'plan' ? canvas : canvas3d;
+  const r = c.getBoundingClientRect();
   return {
-    x: (e.clientX - r.left) * (canvas.width / r.width),
-    y: (e.clientY - r.top) * (canvas.height / r.height),
+    x: (e.clientX - r.left) * (c.width / r.width),
+    y: (e.clientY - r.top) * (c.height / r.height),
   };
 }
 
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+for (const c of [canvas, canvas3d]) c.addEventListener('contextmenu', (e) => e.preventDefault());
 
-canvas.addEventListener('pointerdown', (e) => {
+/**
+ * Pointer handling is registered on BOTH canvases; only one is visible at a time, so
+ * whichever receives the event is the active view.
+ */
+function forEachCanvas(fn: (c: HTMLCanvasElement) => void): void {
+  fn(canvas);
+  fn(canvas3d);
+}
+
+/** Cell under a screen position, in whichever view is showing. */
+function cellUnder(e: PointerEvent | WheelEvent): { x: number; y: number } | null {
+  const [vw, vh] = viewSize();
+  const q = pointerPos(e);
+  if (viewMode === 'plan') return camera.cellIndexAt(q.x, q.y, vw, vh);
+  return view3d?.cellAtScreen(q.x, q.y, vw, vh) ?? null;
+}
+
+forEachCanvas((el) => el.addEventListener('pointerdown', (e) => {
   // Capture can throw for synthetic or already-released pointers; it's an
   // optimisation for drag-outside-the-canvas, never a requirement.
-  try { canvas.setPointerCapture(e.pointerId); } catch { /* not fatal */ }
+  const surface = viewMode === 'plan' ? canvas : canvas3d;
+  try { surface.setPointerCapture(e.pointerId); } catch { /* not fatal */ }
   const [vw, vh] = viewSize();
   if (e.button === 2 || e.button === 1 || spaceDown) {
     panning = true;
     canvas.classList.add('panning');
+    canvas3d.classList.add('panning');
     lastPan = pointerPos(e);
     return;
   }
-  const q = pointerPos(e);
-  const cell = camera.cellIndexAt(q.x, q.y, vw, vh);
+  const cell = cellUnder(e);
   if (!cell) return;
   newStroke();
   dragging = true;
   lastCell = cell;
   applyAt(cell);
-});
+}));
 
-canvas.addEventListener('pointermove', (e) => {
+forEachCanvas((el) => el.addEventListener('pointermove', (e) => {
   const [vw, vh] = viewSize();
   if (panning) {
     const q = pointerPos(e);
-    camera.panByPixels(q.x - lastPan.x, q.y - lastPan.y, vw, vh);
+    if (viewMode === 'plan') camera.panByPixels(q.x - lastPan.x, q.y - lastPan.y, vw, vh);
+    else view3d?.cam.panByPixels(q.x - lastPan.x, q.y - lastPan.y, vh);
     lastPan = q;
     return;
   }
-  const cell = camera.cellIndexAt(pointerPos(e).x, pointerPos(e).y, vw, vh);
+  const cell = cellUnder(e);
   hover = cell;
   if (!dragging || !cell || !lastCell) return;
   if (cell.x === lastCell.x && cell.y === lastCell.y) return;
@@ -461,7 +497,7 @@ canvas.addEventListener('pointermove', (e) => {
     applyAt(cell);
   }
   lastCell = cell;
-});
+}));
 
 const endDrag = () => {
   if (dragging) post({ type: 'endstroke' });
@@ -469,17 +505,24 @@ const endDrag = () => {
   panning = false;
   lastCell = null;
   canvas.classList.remove('panning');
+  canvas3d.classList.remove('panning');
 };
-canvas.addEventListener('pointerup', endDrag);
-canvas.addEventListener('pointercancel', endDrag);
-canvas.addEventListener('pointerleave', () => { hover = null; });
+forEachCanvas((el) => {
+  el.addEventListener('pointerup', endDrag);
+  el.addEventListener('pointercancel', endDrag);
+  el.addEventListener('pointerleave', () => { hover = null; });
+});
 
-canvas.addEventListener('wheel', (e) => {
+forEachCanvas((el) => el.addEventListener('wheel', (e) => {
   e.preventDefault();
   const [vw, vh] = viewSize();
-  const q = pointerPos(e);
-  camera.zoomAt(e.deltaY < 0 ? 1 : -1, q.x, q.y, vw, vh);
-}, { passive: false });
+  if (viewMode === 'plan') {
+    const q = pointerPos(e);
+    camera.zoomAt(e.deltaY < 0 ? 1 : -1, q.x, q.y, vw, vh);
+  } else {
+    view3d?.cam.zoomBy(e.deltaY < 0 ? 1 : -1);
+  }
+}, { passive: false }));
 
 function applyAt(cell: { x: number; y: number }): void {
   const i = cell.y * MAP_SIZE + cell.x;
@@ -541,6 +584,18 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (e.metaKey || e.ctrlKey) return; // leave browser shortcuts alone
+  if (e.code === 'Tab') {
+    e.preventDefault();
+    setViewMode(viewMode === 'plan' ? 'iso' : 'plan');
+    return;
+  }
+  if (viewMode === 'iso' && view3d) {
+    // Rotation and tilt only mean something in the ¾ view.
+    if (e.key === ',' || e.key === '<') { view3d.cam.rotate(-1); return; }
+    if (e.key === '.' || e.key === '>') { view3d.cam.rotate(1); return; }
+    if (e.key === 'PageUp') { view3d.cam.tiltBy(0.09); return; }
+    if (e.key === 'PageDown') { view3d.cam.tiltBy(-0.09); return; }
+  }
   if (e.code === 'Space') { spaceDown = true; e.preventDefault(); return; }
   const t = TOOLS.find((x) => x.key === e.key);
   if (t) { selectTool(t); return; }
@@ -548,8 +603,14 @@ window.addEventListener('keydown', (e) => {
   if (e.key === ']') setSpeed(Math.min(SPEEDS.length - 1, speed + 1));
   if (e.key === 'p' || e.key === 'P') setSpeed(speed === 0 ? 1 : 0);
   const [vw, vh] = viewSize();
-  if (e.key === '=' || e.key === '+') camera.zoomAt(1, vw / 2, vh / 2, vw, vh);
-  if (e.key === '-' || e.key === '_') camera.zoomAt(-1, vw / 2, vh / 2, vw, vh);
+  if (e.key === '=' || e.key === '+') {
+    if (viewMode === 'plan') camera.zoomAt(1, vw / 2, vh / 2, vw, vh);
+    else view3d?.cam.zoomBy(1);
+  }
+  if (e.key === '-' || e.key === '_') {
+    if (viewMode === 'plan') camera.zoomAt(-1, vw / 2, vh / 2, vw, vh);
+    else view3d?.cam.zoomBy(-1);
+  }
 });
 window.addEventListener('keyup', (e) => { if (e.code === 'Space') spaceDown = false; });
 
@@ -691,10 +752,13 @@ function renderWhy(cell: InspectedCell): void {
 function dpr(): number { return window.devicePixelRatio || 1; }
 
 function fit(): void {
-  const r = canvas.getBoundingClientRect();
+  const active = viewMode === 'plan' ? canvas : canvas3d;
+  const r = active.getBoundingClientRect();
   const d = dpr();
-  canvas.width = Math.max(1, Math.round(r.width * d));
-  canvas.height = Math.max(1, Math.round(r.height * d));
+  for (const c of [canvas, canvas3d]) {
+    c.width = Math.max(1, Math.round(r.width * d));
+    c.height = Math.max(1, Math.round(r.height * d));
+  }
 }
 window.addEventListener('resize', fit);
 // A window resize event doesn't fire when the surrounding layout changes without the
@@ -709,9 +773,15 @@ worker.onmessage = (e: MessageEvent<FromWorker>) => {
     renderer = new CityRenderer(msg.width);
     renderer.setTerrain(msg.water, msg.shore, msg.terrainHeight);
     terrainLayers = { floodRisk: msg.floodRisk };
+    terrain3d = {
+      water: msg.water, shore: msg.shore, height: msg.terrainHeight, floodRisk: msg.floodRisk,
+    };
+    if (view3d) { view3d.dispose(); view3d = null; }
+    if (viewMode === 'iso') ensure3d();
     fit();
   } else if (msg.type === 'frame') {
     snap = msg;
+    if (viewMode === 'iso') applyOverlay3d();
     if (msg.series) {
       series = msg.series;
       chart?.draw(series);
@@ -754,17 +824,69 @@ if (import.meta.env.DEV) {
   };
 }
 
+function ensure3d(): View3D | null {
+  if (!terrain3d || !snap) return null;
+  if (!view3d) {
+    view3d = new View3D(canvas3d, camera.width, camera.height);
+    view3d.setTerrain(terrain3d);
+    view3d.cam.lookAtCell(camera.cx, camera.cy);
+    applyOverlay3d(true);
+  }
+  return view3d;
+}
+
+/** Push the active data layer onto the ground plane of the ¾ view. */
+function applyOverlay3d(force = false): void {
+  if (!view3d || !snap) return;
+  const now = performance.now();
+  // Recolouring the whole ground is a per-vertex walk; a few times a second is plenty
+  // for a field that moves over months.
+  if (!force && now - overlayDirtyAt < 400) return;
+  overlayDirtyAt = now;
+  if (layerIndex < 0 || !overlay) { view3d.setGroundOverlay(null, null, 1); return; }
+  const l = LAYERS[layerIndex];
+  const data = terrainLayers[l.field] ?? snap.layer;
+  view3d.setGroundOverlay(data ?? null, overlay.lut, overlay.max);
+}
+
+function setViewMode(mode: ViewMode): void {
+  viewMode = mode;
+  canvas.hidden = mode !== 'plan';
+  canvas3d.hidden = mode !== 'iso';
+  $('view-toggle').textContent = mode === 'plan' ? 'Plan' : '¾ view';
+  if (mode === 'iso') {
+    const v = ensure3d();
+    v?.cam.lookAtCell(camera.cx, camera.cy);
+    applyOverlay3d(true);
+  } else if (view3d) {
+    // Carry the position back so switching modes never loses your place.
+    camera.cx = view3d.cam.target.x;
+    camera.cy = view3d.cam.target.z;
+  }
+  fit();
+}
+
 function frame(): void {
   const [vw, vh] = viewSize();
   // A collapsed viewport (hidden tab, minimised window, an embedding pane with no size)
   // is a normal state, not an error. Render nothing rather than throwing every frame.
   if (snap && vw > 4 && vh > 4) {
-    renderer.draw(ctx, vw, vh, snap, camera, overlay, hover, brush);
+    if (viewMode === 'plan') {
+      renderer.draw(ctx, vw, vh, snap, camera, overlay, hover, brush);
+    } else {
+      const v = ensure3d();
+      if (v) {
+        v.update(snap, vw / vh);
+        v.setHover(hover);
+        v.render(vw, vh);
+      }
+    }
   }
   requestAnimationFrame(frame);
 }
 
 buildTools();
+$('view-toggle').onclick = () => setViewMode(viewMode === 'plan' ? 'iso' : 'plan');
 buildManualUi();
 buildAchievementsUi();
 buildChart();

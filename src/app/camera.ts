@@ -17,8 +17,8 @@ export class Camera {
   zoomIndex = 7;
   // Declared explicitly rather than as constructor parameter properties: the sim and app
   // must stay erasable TypeScript so `node --experimental-strip-types` can run them.
-  private readonly width: number;
-  private readonly height: number;
+  readonly width: number;
+  readonly height: number;
 
   constructor(width: number, height: number) {
     this.width = width;

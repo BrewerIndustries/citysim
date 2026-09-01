@@ -402,6 +402,33 @@ export function buildManual(): ManualSection[] {
         ])}`,
     },
     {
+      id: 'views',
+      title: 'Views',
+      html: `
+        <p>There are two ways to look at the city, over one simulation. <b>Tab</b> switches
+        between them, and each keeps its own camera, so you can jump back and forth
+        without losing your place.</p>
+        <p><b>Plan</b> is the top-down schematic. It is what you build in: no building ever
+        hides the tile behind it, the grid stays square, and every data layer reads at a
+        glance.</p>
+        <p><b>¾ view</b> is the city as a model. The camera is <b>orthographic</b> rather
+        than perspective, which is what keeps the grid legible right across the screen
+        instead of leaning away at the edges — the readability of the classic isometric
+        games, but with real terrain, real rotation and a real skyline.</p>
+        <p>Buildings are plain massing blocks for now: height carries level and density, and
+        colour carries land use. Detailed models come later — the shape and the camera have
+        to be right first.</p>
+        ${table(['Key', 'In the ¾ view'], [
+          ['<kbd>Tab</kbd>', 'Switch between Plan and ¾'],
+          ['<kbd>,</kbd> / <kbd>.</kbd>', 'Rotate the camera in eighths'],
+          ['<kbd>PgUp</kbd> / <kbd>PgDn</kbd>', 'Tilt, between 25° and 70°'],
+          ['Scroll', 'Zoom'],
+          ['Right-drag', 'Pan'],
+        ])}
+        <p>Data layers work in both. In the ¾ view the layer is painted onto the ground, so
+        you can read land value or pollution with the buildings still standing on it.</p>`,
+    },
+    {
       id: 'controls',
       title: 'Controls',
       html: `
@@ -415,6 +442,7 @@ export function buildManual(): ManualSection[] {
           ['<kbd>P</kbd>', 'Pause'],
           ['<kbd>Cmd/Ctrl</kbd>+<kbd>Z</kbd>', 'Undo'],
           ['<kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>', 'Redo'],
+          ['<kbd>Tab</kbd>', 'Switch between Plan and the ¾ view'],
           ['<kbd>A</kbd>', 'Achievements'],
           ['<kbd>?</kbd> or <kbd>H</kbd>', 'Open this manual'],
           ['<kbd>Esc</kbd>', 'Close this manual'],

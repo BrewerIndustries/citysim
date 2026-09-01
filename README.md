@@ -45,8 +45,7 @@ a ¾ view for when you're looking. Offline, single-player, no DRM, no timers.
 - **Art:** architectural scale model — matte materials, heavy ambient occlusion, semantic
   palette by land use, modular kit-of-parts buildings. Realistic proportions, not
   photoreal surfaces.
-- **Next:** the orthographic ¾ renderer over the same simulation. The current top-down
-  view is Plan Mode, which was always going to come first.
+- **Next:** a kit-of-parts building pipeline to replace the ¾ view's massing blocks.
 
 ## How to play
 
@@ -119,6 +118,9 @@ space-drag to pan.
 - **Disasters** — fire, floods, earthquakes and tornadoes, each switchable on its own.
   Flood risk is fixed by the terrain and shown as a data layer, so it is genuinely
   avoidable: build uphill and you will never flood.
+- **Two views over one simulation** (`Tab`) — the top-down Plan Mode you build in, and an
+  orthographic ¾ view with real terrain and rotation. Buildings are untextured massing
+  blocks: the camera and proportions get judged before any art is made.
 - **Achievements** — 24 of them across growth, economy, infrastructure, environment and
   adversity. Press `A`. Locked ones show what they need, because one you can't see isn't
   something you can aim at.
