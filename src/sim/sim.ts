@@ -45,9 +45,24 @@ export class Simulation {
       clampField(dst, FIELD_MAX);
     }
 
+    this.suppressCrime();
     this.deriveLandValue();
     this.deriveDesirability();
     this.tick++;
+  }
+
+  /**
+   * Police coverage suppresses crime rather than merely offsetting it in land value.
+   * Without this a police station was cosmetic — it nudged land value slightly while the
+   * crime field it was supposed to fight went on climbing, so no amount of policing let
+   * a neighbourhood densify. A fully covered area keeps 20% of its base crime.
+   */
+  private suppressCrime(): void {
+    const crime = this.fields.get('crime');
+    const police = this.fields.get('policeCover');
+    for (let i = 0; i < crime.length; i++) {
+      crime[i] *= 1 - 0.8 * (police[i] / FIELD_MAX);
+    }
   }
 
   /**
@@ -98,9 +113,12 @@ export class Simulation {
       const v = lv[i];
       // Residents want jobs, safety, clean air. Commerce wants footfall and access.
       // Industry mostly wants transport and doesn't care about pollution or land value.
-      dR[i] = clamp255(j * 0.40 + t * 0.20 + v * 0.25 - p * 0.70 - c * 0.60);
-      dC[i] = clamp255(j * 0.30 + t * 0.35 + v * 0.30 - c * 0.45 - p * 0.20);
-      dI[i] = clamp255(t * 0.55 + j * 0.15 + 30 - c * 0.10);
+      // Land value is the dominant driver: it already aggregates amenities, schools and
+      // nuisances, so weighting it lightly (0.25) left desirability too flat for anything
+      // to ever reach level 2. Industry is largely indifferent to all of it.
+      dR[i] = clamp255(v * 0.50 + j * 0.35 + t * 0.20 - p * 0.45 - c * 0.45);
+      dC[i] = clamp255(v * 0.35 + j * 0.25 + t * 0.35 - c * 0.40 - p * 0.15);
+      dI[i] = clamp255(t * 0.45 + j * 0.10 + 30 - c * 0.10);
     }
   }
 
