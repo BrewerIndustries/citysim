@@ -25,6 +25,14 @@ const offCtx = off.getContext('2d')!;
 let frameMs = 0;
 let meta = { population: 0, builtCells: 0, areaKm2: 0, memMB: 0 };
 
+// Chrome throttles workers in a hidden tab, which inflates the measured tick cost by
+// 10-20x. Reporting that as a budget percentage would be a made-up number, so track
+// visibility and say "throttled" instead of lying with a figure.
+let everHidden = document.visibilityState === 'hidden';
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') everHidden = true;
+});
+
 // --- layer buttons -----------------------------------------------------------
 const buttons = LAYERS.map((layer) => {
   const b = document.createElement('button');
@@ -120,7 +128,14 @@ function renderStats(tick: number): void {
     ['Field memory', `${meta.memMB.toFixed(1)} MB`],
     ['Tick', String(tick)],
     ['Sim cost', `${frameMs.toFixed(2)} ms`],
-    ['Budget', `${((frameMs / 100) * 100).toFixed(1)}% of 100 ms`],
+    [
+      'Budget',
+      document.visibilityState === 'hidden'
+        ? 'tab hidden — throttled'
+        : everHidden
+          ? `${frameMs.toFixed(1)}% of 100 ms (settling)`
+          : `${frameMs.toFixed(1)}% of 100 ms`,
+    ],
   ];
   statsEl.innerHTML = rows
     .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
