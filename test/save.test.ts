@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { wireUtilities } from './helpers.ts';
 import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { City } from '../src/sim/city.ts';
+import { WORLD_WORKS, effectsOf } from '../src/sim/works.ts';
 import { serialize, deserialize, SAVE_VERSION } from '../src/sim/save.ts';
 import { ZONE_RES, ZONE_COM, CIVIC_DEFS } from '../src/sim/tiles.ts';
 
@@ -95,19 +96,56 @@ test('every civic building survives a round trip', () => {
   // grant everything rather than playing up to it.
   c.peakPopulation = 1_000_000;
   c.funds = 5_000_000;
-  for (const d of CIVIC_DEFS) c.everBuilt.add(d.id);
+  // World works are excluded here and covered by the test below: granting everBuilt is
+  // what unlocks an ordinary building, but for a work it means "already built", and no
+  // city can hold two works from the same branch anyway.
+  const ordinary = CIVIC_DEFS.filter((d) => !d.works);
+  for (const d of ordinary) c.everBuilt.add(d.id);
   c.refreshUnlocks();
   let x = 4;
-  for (const def of CIVIC_DEFS) {
+  for (const def of ordinary) {
     assert.ok(c.placeCivic(c.grid.index(x, 4), def.id).ok, `could not place ${def.label}`);
     x += def.size + 1;
   }
   const restored = deserialize(serialize(c)).city;
-  for (const def of CIVIC_DEFS) {
+  for (const def of ordinary) {
     let anchors = 0;
     for (let i = 0; i < restored.tiles.civic.length; i++) {
       if (restored.tiles.civic[i] === def.id && restored.tiles.civicAnchor[i]) anchors++;
     }
     assert.equal(anchors, 1, `${def.label} lost its anchor across save/load`);
+  }
+});
+
+
+test('every world work survives a round trip', () => {
+  // One city each, because a work can only ever be built once and its branch sibling
+  // can never be built at all afterwards.
+  for (const def of WORLD_WORKS) {
+    const c = new City(128, 1, FLAT_MAP);
+    c.peakPopulation = 1_000_000;
+    c.funds = 5_000_000;
+    for (const d of CIVIC_DEFS) if (!d.works) c.everBuilt.add(d.id);
+    // The capstone counts works already built, so give it something to count.
+    if (def.unlock?.worksBuilt) {
+      for (const w of WORLD_WORKS.filter((w) => w.id !== def.id).slice(0, def.unlock.worksBuilt)) {
+        c.everBuilt.add(w.id);
+      }
+    }
+    c.refreshUnlocks();
+    const r = c.placeCivic(c.grid.index(4, 4), def.id);
+    assert.ok(r.ok, `could not place ${def.label}: ${r.error}`);
+
+    const restored = deserialize(serialize(c)).city;
+    let anchors = 0;
+    for (let i = 0; i < restored.tiles.civic.length; i++) {
+      if (restored.tiles.civic[i] === def.id && restored.tiles.civicAnchor[i]) anchors++;
+    }
+    assert.equal(anchors, 1, `${def.label} lost its anchor across save/load`);
+    // And its bonus has to come back with it, or a loaded city quietly loses its wonders.
+    // Compared against effectsOf directly rather than against the source city, which has
+    // not recomputed its own effects until it steps.
+    restored.step();
+    assert.deepEqual(restored.worksEffects, effectsOf([def.id]), `${def.label} lost its bonus`);
   }
 });

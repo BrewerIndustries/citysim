@@ -5,7 +5,7 @@
 import { Grid } from './grid.ts';
 import { Rng } from './rng.ts';
 import { Fields } from './fields.ts';
-import { Simulation } from './sim.ts';
+import { Simulation, LAND_VALUE_BASE } from './sim.ts';
 import { Tiles, CIVIC_BY_ID, CIVIC_DEFS, ZONE_RES, ZONE_COM, ZONE_IND, MAX_LEVEL } from './tiles.ts';
 import { recomputeRoadDistance, ROAD_REACH } from './roads.ts';
 import { UtilityGrid, POWER, WATER, SEWAGE, type UtilityReport } from './utility.ts';
@@ -18,6 +18,7 @@ import { History } from './history.ts';
 import { Terrain, WATER_TABLE_MIN } from './terrain.ts';
 import { lockReason, unlockedIds, type UnlockState } from './unlocks.ts';
 import { ChangeLog } from './dirty.ts';
+import { effectsOf, NO_EFFECTS, type WorksEffects } from './works.ts';
 import {
   wasteAt, isOverflowing, OVERFLOW_EMISSION, EMPTY_WASTE, type WasteReport,
 } from './waste.ts';
@@ -95,6 +96,17 @@ export class City {
   water: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [], unpoweredSources: [] };
   sewage: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [], unpoweredSources: [] };
   waste: WasteReport = { ...EMPTY_WASTE };
+
+  /**
+   * What the world works currently STANDING do for the city.
+   *
+   * Standing, not ever-built: demolish the Grand Park and you lose its bonus. The
+   * *choice* is still spent — the Stadium stays locked forever — which is the asymmetry
+   * that makes the decision permanent without making the building indestructible.
+   */
+  worksEffects: WorksEffects = { ...NO_EFFECTS };
+  /** Ids of the world works standing, cached alongside the disposal sites. */
+  private workIds: number[] = [];
 
   /**
    * Running total of what the city throws away, kept incrementally.
@@ -305,6 +317,7 @@ export class City {
         residentialCapacity: 0, commercialCapacity: 0, industrialCapacity: 0,
       },
       this.tax,
+      this.worksEffects,
     );
 
     this.tickCount++;
@@ -315,9 +328,10 @@ export class City {
     const s = this.stats;
     const l = this.ledger;
     // Tax yield scales with what each sector actually supports, times its rate.
-    l.taxR = s.population * 0.11 * this.tax.r;
-    l.taxC = s.jobsC * 0.16 * this.tax.c;
-    l.taxI = s.jobsI * 0.14 * this.tax.i;
+    const yieldMul = this.worksEffects.taxYield;
+    l.taxR = s.population * 0.11 * this.tax.r * yieldMul;
+    l.taxC = s.jobsC * 0.16 * this.tax.c * yieldMul;
+    l.taxI = s.jobsI * 0.14 * this.tax.i * yieldMul;
 
     // Counted incrementally as things are built and demolished. Two full-grid scans a
     // month cost 35ms a tick at Tier 3 for numbers that change by one at a time.
@@ -587,6 +601,10 @@ export class City {
       emission[i] = 8 + lvl * (den + 1) * 3.2 + septic + litter;
       crimeGen[i] = 1.5 + lvl * 0.4;
     }
+    // World works act on what the city PRODUCES, at source, so their effect shows up in
+    // every field downstream of these two rather than being patched on afterwards.
+    emission[i] *= this.worksEffects.emission;
+    crimeGen[i] *= this.worksEffects.crime;
   }
 
   /** Population, jobs and nuisance sources are a direct read of what's built. */
@@ -633,10 +651,23 @@ export class City {
       }
     }
     this.wasteSites = [];
+    this.workIds = [];
     for (let i = 0; i < this.tiles.civic.length; i++) {
       if (!this.tiles.civicAnchor[i]) continue;
-      if (CIVIC_BY_ID.get(this.tiles.civic[i])?.waste) this.wasteSites.push(i);
+      const def = CIVIC_BY_ID.get(this.tiles.civic[i]);
+      if (def?.waste) this.wasteSites.push(i);
+      if (def?.works) this.workIds.push(def.id);
     }
+    // The emission and crime multipliers act on what every cell produces, so a change to
+    // them means every cell's sources are stale. That is only true when the works
+    // themselves changed — forcing it on every civic build made a school placement cost
+    // a full-grid source rewrite and put 17ms on the benchmark's p95.
+    const next = effectsOf(this.workIds);
+    if (next.emission !== this.worksEffects.emission || next.crime !== this.worksEffects.crime) {
+      this.sourcesAllDirty = true;
+    }
+    this.worksEffects = next;
+    this.sim.worksLandValue = next.landValue;
 
     // Civic sources changed wholesale; the affected fields are cheap and rarely touched.
     for (const def of CIVIC_DEFS) if (def.source) this.sim.markSourceAll(def.source.field);
@@ -685,6 +716,9 @@ export class City {
     this.recountUpkeep();
     this.stats = tallyCity(this.tiles);
   }
+
+  /** Land value every tile starts from, including whatever the world works add. */
+  get landValueBase(): number { return LAND_VALUE_BASE + this.worksEffects.landValue; }
 
   canAfford(cost: number): boolean { return this.funds >= cost; }
 
@@ -820,7 +854,14 @@ export class City {
     const def = CIVIC_BY_ID.get(defId);
     if (!def) return { ok: false, error: 'unknown building' };
     const locked = lockReason(def, this.unlockState);
-    if (locked) return { ok: false, error: locked.replace(/^Needs /, 'it needs ') };
+    if (locked) {
+      return {
+        ok: false,
+        error: locked.startsWith('Needs ')
+          ? locked.replace(/^Needs /, 'it needs ')
+          : locked[0].toLowerCase() + locked.slice(1),
+      };
+    }
     const { width, height } = this.grid;
     const ax = anchor & (width - 1);
     const ay = anchor >>> this.grid.shift;
@@ -910,6 +951,7 @@ export class City {
       if (def.source?.field === 'recycleSrc') recycling += def.waste;
     }
 
+    capacity += this.worksEffects.waste;
     const produced = this.wasteProduced;
     const overflow = isOverflowing(produced, capacity);
     this.waste = {
@@ -1008,6 +1050,7 @@ export class City {
       distress: t.distress[i],
       reason: this.reason[i],
       roadReach: ROAD_REACH,
+      landValueBase: this.landValueBase,
       required: requiredDesirability(t.level[i]),
       values,
     };

@@ -18,6 +18,7 @@ import { CELL_METRES } from '../sim/grid.ts';
 import { SHORE_AMENITY } from '../sim/city.ts';
 import { LAYERS, MAX_LAYERS } from './palette.ts';
 import { REMOVE_TARGETS } from './tools.ts';
+import { WORLD_WORKS, siblingOf } from '../sim/works.ts';
 import { WASTE_PER_STEP, RECYCLE_MAX_CUT, FREE_DISPOSAL } from '../sim/waste.ts';
 import { SERIES, HISTORY_LIMIT, type SeriesKey } from '../sim/history-series.ts';
 import { MAX_UNDO } from '../sim/history.ts';
@@ -80,6 +81,28 @@ function roadReachDiagram(): string {
     aria-label="Two parallel streets ${IDEAL_ROAD_SPACING} tiles apart, with every tile between them within ${ROAD_REACH} tiles of a road">
     ${parts.join('')}
   </svg>`;
+}
+
+/**
+ * The paired works, laid out so the alternatives sit side by side. Generated from the
+ * branch keys rather than written out, so a new pair appears here automatically and a
+ * broken pair shows as a gap instead of going unmentioned.
+ */
+function branchTable(): string {
+  const seen = new Set<string>();
+  const rows: string[][] = [];
+  for (const d of WORLD_WORKS) {
+    const branch = d.works!.branch;
+    if (!branch || seen.has(branch)) continue;
+    seen.add(branch);
+    const sib = siblingOf(d);
+    rows.push([
+      `<b>${d.label}</b><br>${money(d.cost)} · ${d.works!.boon}`,
+      sib ? `<b>${sib.label}</b><br>${money(sib.cost)} · ${sib.works!.boon}` : '—',
+      requirementText(d),
+    ]);
+  }
+  return table(['One…', '…or the other', 'Requires'], rows);
 }
 
 function table(headers: string[], rows: string[][]): string {
@@ -440,6 +463,30 @@ export function buildManual(): ManualSection[] {
         ticker with its location.</p>
         <p>If you would rather build without the risk, switch <b>Fires</b> off in the
         Disasters panel at any time.</p>`,
+    },
+    {
+      id: 'works',
+      title: 'World works',
+      html: `
+        <p>World works are the buildings a mature city earns. There is <b>one of each per
+        city, ever</b> — not one standing, one <i>ever</i>. They are what makes a large city
+        a particular place rather than a bigger version of a town.</p>
+        <p class="tip"><b>Most come in pairs, and building one closes the other off
+        permanently.</b> Not until you demolish it — permanently. Bulldozing your Grand Park
+        does not give you the Grand Stadium back, because a choice you can walk back is not
+        a choice. Demolishing one <i>does</i> lose you its bonus, so the building is worth
+        keeping; the decision is simply already spent.</p>
+        <p>Every bonus is citywide and stated on the building. A wonder whose effect you
+        cannot see is indistinguishable from an expensive statue.</p>
+        <h4>The forks</h4>
+        ${branchTable()}
+        <h4>Standing alone</h4>
+        ${table(['Work', 'Cost', 'Upkeep', 'Gives', 'Requires'],
+          WORLD_WORKS.filter((d) => !d.works!.branch).map((d) => [
+            d.label, money(d.cost), money(d.upkeep) + ' / mo', d.works!.boon, requirementText(d),
+          ]))}
+        <p>Each carries its own achievement, and there is one more for building three — by
+        which point the city you have is visibly not the city you might have had.</p>`,
     },
     {
       id: 'progression',

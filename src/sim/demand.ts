@@ -33,7 +33,12 @@ const RESIDENTS_PER_JOB = 2.4;
 /** Tax rate at which demand is unaffected; above this it bites, below it stimulates. */
 export const NEUTRAL_TAX = 9;
 
-export function computeDemand(census: Census, tax: { r: number; c: number; i: number }): Demand {
+export function computeDemand(
+  census: Census,
+  tax: { r: number; c: number; i: number },
+  /** World works multipliers on commercial and industrial appetite. */
+  works: { demandC: number; demandI: number } = { demandC: 1, demandI: 1 },
+): Demand {
   const { population, jobsC, jobsI } = census;
 
   // Seed demand so an empty city has somewhere to start.
@@ -44,8 +49,10 @@ export function computeDemand(census: Census, tax: { r: number; c: number; i: nu
   const wantedJobsI = population * JOBS_PER_RESIDENT_I + 25;
 
   const r = normalise(wantedResidents - population, Math.max(120, population * 0.5)) + seed;
-  const c = normalise(wantedJobsC - jobsC, Math.max(40, jobsC * 0.6 + 30)) + seed * 0.6;
-  const i = normalise(wantedJobsI - jobsI, Math.max(40, jobsI * 0.6 + 30)) + seed * 0.8;
+  // A world work multiplies APPETITE, not the shortfall: a station makes the city want
+  // more shops than its population alone would justify, rather than inventing residents.
+  const c = normalise(wantedJobsC * works.demandC - jobsC, Math.max(40, jobsC * 0.6 + 30)) + seed * 0.6;
+  const i = normalise(wantedJobsI * works.demandI - jobsI, Math.max(40, jobsI * 0.6 + 30)) + seed * 0.8;
 
   return {
     r: clamp(r - taxPenalty(tax.r)),

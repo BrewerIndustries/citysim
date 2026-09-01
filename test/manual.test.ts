@@ -14,6 +14,7 @@ import { POWER, WATER, SEWAGE, UTILITY_REACH, type UtilitySpec } from '../src/si
 import { SEPTIC_MAX_LEVEL } from '../src/sim/growth.ts';
 import { requiredDesirability } from '../src/sim/growth.ts';
 import { LAND_VALUE_TERMS } from '../src/sim/sim.ts';
+import { WORLD_WORKS } from '../src/sim/works.ts';
 import { NEUTRAL_TAX } from '../src/sim/demand.ts';
 
 const manual = buildManual();
@@ -201,4 +202,15 @@ test('every utility that needs power says so, in the section that covers it', ()
         `${id} does not need power, so it must not say it does`);
     }
   }
+});
+
+test('the manual documents every world work and both sides of every fork', () => {
+  // A work that ships without a line in the manual is a building nobody can plan for.
+  const w = text(section('works'));
+  for (const d of WORLD_WORKS) {
+    assert.ok(w.includes(d.label), `the works section omits ${d.label}`);
+    assert.ok(w.includes(d.works!.boon), `${d.label} does not say what it gives`);
+  }
+  assert.match(w, /one of each per city/i);
+  assert.match(w, /closes the other off permanently/i);
 });

@@ -145,7 +145,7 @@ test('the Why Panel terms reproduce land value exactly', () => {
 
   let checked = 0;
   for (let i = 0; i < lv.length; i += 997) {
-    let sum = LAND_VALUE_BASE;
+    let sum = c.landValueBase;
     for (const term of LAND_VALUE_TERMS) {
       sum += c.fields.get(term.field as never)[i] * term.weight;
     }

@@ -17,7 +17,7 @@ import { ACHIEVEMENTS } from './achievements.ts';
 
 const MAGIC = 0x4354534d; // "CTSM"
 const END_MAGIC = 0x454e4421; // "END!"
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 /** Planes written to disk, in order. Derived planes are deliberately absent. */
 const PLANES: Array<keyof Tiles & string> = [
@@ -31,14 +31,26 @@ const PLANES_V7: Array<keyof Tiles & string> = ['sewer'];
 /** Ticks of field simulation run after loading, to regenerate the derived state. */
 export const SETTLE_TICKS = 14;
 
-/** Civic ids are small and dense, so the built-set fits in one 32-bit word. */
+/**
+ * Low 32 civic ids as a bitmask, for the word every version since v3 has written.
+ *
+ * The set outgrew one word when the world works were added, which the round-trip test
+ * caught as "civic id 32 does not fit the save bitmask". Rather than add a second word
+ * and buy another 32 ids, v8 writes the overflow as a counted list, which has no next
+ * ceiling to hit. Ids that still fit stay in the mask so older saves keep loading
+ * through the same path.
+ */
 function bitmaskOf(ids: Set<number>): number {
   let mask = 0;
-  for (const id of ids) {
-    if (id < 0 || id > 31) throw new Error(`civic id ${id} does not fit the save bitmask`);
-    mask |= 1 << id;
-  }
+  for (const id of ids) if (id >= 0 && id < 32) mask |= 1 << id;
   return mask >>> 0;
+}
+
+/** The ids a single word cannot hold. Written after the mask from v8 on. */
+function overflowIds(ids: Set<number>): number[] {
+  const out: number[] = [];
+  for (const id of ids) if (id >= 32) out.push(id);
+  return out.sort((a, b) => a - b);
 }
 
 function setFromBitmask(mask: number): Set<number> {
@@ -149,6 +161,9 @@ export function serialize(city: City): Uint8Array {
   // city that shrinks keeps what it reached.
   w.u32(city.peakPopulation);
   w.u32(bitmaskOf(city.everBuilt));
+  const overflow = overflowIds(city.everBuilt);
+  w.u16(overflow.length);
+  for (const id of overflow) w.u16(id);
   for (const name of PLANES) writePlane(w, city.tiles[name] as Uint8Array);
   for (const name of PLANES_V6) writePlane(w, city.tiles[name] as Uint8Array);
   for (const name of PLANES_V7) writePlane(w, city.tiles[name] as Uint8Array);
@@ -223,6 +238,10 @@ export function deserialize(bytes: Uint8Array): LoadResult {
   if (version >= 3) {
     city.peakPopulation = r.u32();
     city.everBuilt = setFromBitmask(r.u32());
+    if (version >= 8) {
+      const n = r.u16();
+      for (let k = 0; k < n; k++) city.everBuilt.add(r.u16());
+    }
   }
   for (const name of PLANES) readPlane(r, city.tiles[name] as Uint8Array);
   if (version >= 6) {

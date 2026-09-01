@@ -956,7 +956,14 @@ function renderWhy(cell: InspectedCell): void {
     .filter((t) => Math.abs(t.n) >= 0.5)
     .sort((a, b) => Math.abs(b.n) - Math.abs(a.n));
 
-  parts.push(`Land value <b>${v.landValue.toFixed(1)}</b>  (base ${LAND_VALUE_BASE})`);
+  // The base rises with the world works standing, so it is read from the cell rather
+  // than from the constant — otherwise a city with a Monument would be told its land
+  // value does not add up.
+  const base = cell.landValueBase ?? LAND_VALUE_BASE;
+  const fromWorks = base - LAND_VALUE_BASE;
+  parts.push(`Land value <b>${v.landValue.toFixed(1)}</b>  (base ${base.toFixed(0)}`
+    + (fromWorks > 0 ? `, ${LAND_VALUE_BASE} + ${fromWorks.toFixed(0)} from world works` : '')
+    + ')');
   parts.push(terms.length
     ? terms.map((t) =>
         `   <span class="${t.n >= 0 ? 'good' : 'bad'}">${t.n >= 0 ? '+' : '−'}${Math.abs(t.n).toFixed(1)}</span>  ${t.label}`,

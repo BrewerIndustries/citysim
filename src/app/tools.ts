@@ -63,6 +63,9 @@ const GROUP_OF: Record<string, string> = {
   pump: 'Water', waterworks: 'Water', sewage: 'Water', treatment: 'Water',
   cleanup: 'Environment', reclamation: 'Environment',
   landfill: 'Refuse', incinerator: 'Refuse', recycling: 'Refuse', recovery: 'Refuse',
+  grandpark: 'World works', stadium: 'World works', terminus: 'World works',
+  interchange: 'World works', cityhall: 'World works', courts: 'World works',
+  greenbelt: 'World works', monument: 'World works',
   bus: 'Transit', metro: 'Transit', rail: 'Transit',
 };
 

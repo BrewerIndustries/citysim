@@ -7,18 +7,41 @@
  * un-invent the university.
  */
 import { CIVIC_DEFS, CIVIC_BY_KEY, type CivicDef } from './tiles.ts';
+import { WORKS_IDS, siblingOf } from './works.ts';
 
 export interface UnlockState {
   peakPopulation: number;
   everBuilt: Set<number>;
 }
 
+/** World works standing or ever built. A demolished work still counts as spent. */
+export function worksBuilt(state: UnlockState): number {
+  let n = 0;
+  for (const id of state.everBuilt) if (WORKS_IDS.has(id)) n++;
+  return n;
+}
+
 /** Null when available; otherwise a plain-language statement of what's missing. */
 export function lockReason(def: CivicDef, state: UnlockState): string | null {
+  // A world work is spent the moment it is built, and so is the branch it sits on.
+  // Both are checked against everBuilt rather than what is standing, so demolishing one
+  // never gives the decision back — a choice you can walk back is not a choice.
+  if (def.works) {
+    if (state.everBuilt.has(def.id)) return `Already built — there is only one ${def.label}`;
+    const sibling = siblingOf(def);
+    if (sibling && state.everBuilt.has(sibling.id)) {
+      return `You built the ${sibling.label} instead`;
+    }
+  }
+
   const rule = def.unlock;
   if (!rule) return null;
 
   const missing: string[] = [];
+  if (rule.worksBuilt !== undefined && worksBuilt(state) < rule.worksBuilt) {
+    const short = rule.worksBuilt - worksBuilt(state);
+    missing.push(`${short} more world work${short === 1 ? '' : 's'}`);
+  }
   if (rule.population !== undefined && state.peakPopulation < rule.population) {
     missing.push(`${rule.population.toLocaleString()} residents`);
   }
@@ -52,7 +75,10 @@ const SOUNDS_LIKE_CONSONANT = /^(uni|use|usu|uti|ubi|eu|one)/;
 function article(label: string): string {
   const lower = label.toLowerCase();
   const vowelSound = /^[aeiou]/.test(lower) && !SOUNDS_LIKE_CONSONANT.test(lower);
-  return `${vowelSound ? 'an' : 'a'} ${lower}`;
+  // Lowercased for the vowel test only. Printing the lowercased label gave "a police hq"
+  // and "the green belt" — the label knows its own casing better than this function does.
+  const name = /^[A-Z][a-z]/.test(label) ? label[0].toLowerCase() + label.slice(1) : label;
+  return `${vowelSound ? 'an' : 'a'} ${name}`;
 }
 
 /** "a school", "8,000 residents and a school", "x, y and z" */
@@ -67,6 +93,7 @@ export function requirementText(def: CivicDef): string {
   if (!rule) return 'Available from the start';
   const parts: string[] = [];
   if (rule.population !== undefined) parts.push(`${rule.population.toLocaleString()} residents`);
+  if (rule.worksBuilt !== undefined) parts.push(`${rule.worksBuilt} other world works`);
   for (const key of rule.requires ?? []) {
     const dep = CIVIC_BY_KEY.get(key);
     if (dep) parts.push(article(dep.label));

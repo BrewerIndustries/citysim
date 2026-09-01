@@ -188,6 +188,13 @@ export class Simulation {
    * Deliberately a plain readable formula — every term here is a number the Why Panel
    * can name and attribute (docs/SIMULATION-MODEL.md rule 4).
    */
+  /**
+   * Flat land value added everywhere by the world works that stand. It raises the FLOOR
+   * rather than joining LAND_VALUE_TERMS, because a term has to be a real field the Why
+   * Panel can read per cell, and this one is uniform by definition.
+   */
+  worksLandValue = 0;
+
   private deriveLandValue(r: Rect): void {
     const f = this.fields;
     const lv = f.get('landValue');
@@ -199,10 +206,13 @@ export class Simulation {
     const pollution = f.get('pollution');
     const crime = f.get('crime');
     const w = this.grid.width;
+    // Hoisted: this is a per-cell loop over the whole dirty rect, and reading a property
+    // off `this` inside it is not free at Tier 3.
+    const base = LAND_VALUE_BASE + this.worksLandValue;
     for (let y = r.y0; y <= r.y1; y++) {
     for (let x = r.x0; x <= r.x1; x++) {
       const i = y * w + x;
-      let v = LAND_VALUE_BASE;
+      let v = base;
       v += amenity[i] * 0.45;
       v += transit[i] * 0.30;
       v += school[i] * 0.20;

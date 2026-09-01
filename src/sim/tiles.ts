@@ -41,6 +41,8 @@ export interface UnlockRule {
   population?: number;
   /** Keys of buildings that must have been built at least once. */
   requires?: string[];
+  /** How many world works must already stand. Used by the capstone. */
+  worksBuilt?: number;
 }
 
 export interface CivicDef {
@@ -68,6 +70,22 @@ export interface CivicDef {
   pollution?: number;
   /** Absent means available from the start. */
   unlock?: UnlockRule;
+  /**
+   * Marks this as a WORLD WORK: one per city, forever. See works.ts.
+   *
+   * Its presence is what makes the building unique — there is no separate flag to keep
+   * in step with it.
+   */
+  works?: {
+    /**
+     * Works sharing a branch are alternatives. Building one locks its sibling for good.
+     * Absent means this work stands alone.
+     */
+    branch?: string;
+    bonus: import('./works.ts').WorksBonus;
+    /** One line naming what it gives, shown wherever the building is. */
+    boon: string;
+  };
   /** Short note shown in the tool rail and manual. */
   note?: string;
   colour: string;
@@ -185,6 +203,79 @@ export const CIVIC_DEFS: CivicDef[] = [
     waste: 3400, source: { field: 'recycleSrc', value: 300 }, colour: '#3f8f52',
     unlock: { population: 20000, requires: ['recycling'] },
     note: 'Recycling for a whole district' },
+
+  // --- world works -----------------------------------------------------------
+  // One per city, forever. Most come in pairs where building one closes the other off
+  // permanently: the point is a decision a big city can only make once, not another
+  // increment. See works.ts for why the bonus set is deliberately small and closed.
+  { id: 29, key: 'grandpark', label: 'Grand Park', cost: 22000, upkeep: 900, size: 6,
+    source: { field: 'amenity', value: 240 }, colour: '#5ec87a',
+    unlock: { population: 8000 },
+    works: {
+      branch: 'heart', bonus: { landValue: 6, emission: 0.92 },
+      boon: 'Raises land value across the whole city and takes the edge off its air',
+    },
+    note: 'The civic heart, if you want the city to feel green' },
+  { id: 30, key: 'stadium', label: 'Grand Stadium', cost: 26000, upkeep: 1150, size: 6,
+    source: { field: 'amenity', value: 190 }, colour: '#c8763f',
+    unlock: { population: 8000 },
+    works: {
+      branch: 'heart', bonus: { demandC: 1.25, landValue: 4, crime: 1.15 },
+      boon: 'Commercial demand across the city, at the cost of more crime',
+    },
+    note: 'The civic heart, if you want the city to feel busy' },
+
+  { id: 31, key: 'terminus', label: 'Central Station', cost: 40000, upkeep: 1600, size: 6,
+    source: { field: 'transitSrc', value: 260 }, colour: '#9a6fd0',
+    unlock: { population: 20000, requires: ['metro'] },
+    works: {
+      branch: 'terminus', bonus: { demandC: 1.2, landValue: 5 },
+      boon: 'Transit access reaching most of the city, and commerce to match',
+    },
+    note: 'A city built around moving people' },
+  { id: 32, key: 'interchange', label: 'Freight Interchange', cost: 36000, upkeep: 1400, size: 6,
+    pollution: 34, colour: '#8a7a4f',
+    unlock: { population: 20000, requires: ['metro'] },
+    works: {
+      branch: 'terminus', bonus: { demandI: 1.35, waste: 2200, emission: 1.06 },
+      boon: 'Industrial demand and disposal capacity, and the air to pay for it',
+    },
+    note: 'A city built around moving goods' },
+
+  { id: 33, key: 'cityhall', label: 'City Hall', cost: 55000, upkeep: 1800, size: 5,
+    source: { field: 'amenity', value: 150 }, colour: '#c8b45a',
+    unlock: { population: 40000, requires: ['policehq'] },
+    works: {
+      branch: 'seat', bonus: { taxYield: 1.14 },
+      boon: 'Every tax the city collects yields 14% more',
+    },
+    note: 'Govern for the treasury' },
+  { id: 34, key: 'courts', label: 'Courts of Justice', cost: 52000, upkeep: 2000, size: 5,
+    source: { field: 'policeSrc', value: 300 }, colour: '#6f83b8',
+    unlock: { population: 40000, requires: ['policehq'] },
+    works: {
+      branch: 'seat', bonus: { crime: 0.7, landValue: 3 },
+      boon: 'Cuts the crime the whole city generates by nearly a third',
+    },
+    note: 'Govern for the streets' },
+
+  { id: 35, key: 'greenbelt', label: 'The Green Belt', cost: 45000, upkeep: 1500, size: 6,
+    source: { field: 'cleanupSrc', value: 260 }, colour: '#3fa86a',
+    unlock: { population: 30000, requires: ['reclamation'] },
+    works: {
+      branch: undefined, bonus: { emission: 0.78, landValue: 4 },
+      boon: 'Every building in the city emits a fifth less',
+    },
+    note: 'Stands alone — there is no alternative to clean air' },
+
+  { id: 36, key: 'monument', label: 'The Monument', cost: 120000, upkeep: 600, size: 4,
+    source: { field: 'amenity', value: 300 }, colour: '#d8c87a',
+    unlock: { population: 75000, worksBuilt: 3 },
+    works: {
+      branch: undefined, bonus: { landValue: 14 },
+      boon: 'A city that has done everything else, and has something to show for it',
+    },
+    note: 'The capstone. Nothing else unlocks it' },
 
   // --- transit ---------------------------------------------------------------
   { id: 6, key: 'bus', label: 'Bus stop', cost: 120, upkeep: 18, size: 1,

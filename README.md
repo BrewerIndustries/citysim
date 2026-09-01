@@ -164,14 +164,21 @@ space-drag to pan.
 - **Two views over one simulation** (`Tab`) — the top-down Plan Mode you build in, and an
   orthographic ¾ view with real terrain and rotation. Buildings are untextured massing
   blocks: the camera and proportions get judged before any art is made.
-- **Achievements** — 24 of them across growth, economy, infrastructure, environment and
+- **World works** — one-per-city buildings a mature city earns, and the only decisions in
+  the game you can make exactly once. Most come in pairs — Grand Park or Grand Stadium,
+  Central Station or Freight Interchange, City Hall or Courts of Justice — where building
+  one closes the other off *permanently*, not merely until you demolish it. Every bonus is
+  citywide and stated on the building: a wonder whose effect you cannot see is
+  indistinguishable from an expensive statue. Bonuses come from what stands, so demolishing
+  one loses its effect; the choice stays spent either way.
+- **Achievements** — 33 of them across growth, economy, infrastructure, environment, world works and
   adversity. Press `A`. Locked ones show what they need, because one you can't see isn't
   something you can aim at.
 - **Benchmark harness** — synthetic city generator for any tier, written before any
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 176 tests
+npm test          # 192 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 

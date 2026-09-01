@@ -10,6 +10,7 @@
  */
 import type { City } from './city.ts';
 import { CIVIC_BY_KEY } from './tiles.ts';
+import { WORLD_WORKS, WORKS_IDS, theName } from './works.ts';
 import { FIELD_MAX } from './fields.ts';
 
 export interface Achievement {
@@ -17,7 +18,7 @@ export interface Achievement {
   name: string;
   description: string;
   /** Grouping for the list. */
-  group: 'Growth' | 'Economy' | 'Infrastructure' | 'Environment' | 'Adversity';
+  group: 'Growth' | 'Economy' | 'Infrastructure' | 'Environment' | 'Adversity' | 'World works';
   /** True once earned. Evaluated monthly; never un-earned. */
   test: (c: City, s: Snapshot) => boolean;
 }
@@ -35,6 +36,24 @@ export interface Snapshot {
 }
 
 const has = (c: City, key: string) => c.everBuilt.has(CIVIC_BY_KEY.get(key)?.id ?? -1);
+
+/**
+ * One achievement per world work, generated from the works themselves.
+ *
+ * Hand-writing these would mean a work could ship with no achievement and nobody would
+ * notice — the same failure as the hand-written colour table that left fifteen buildings
+ * invisible. Ids are derived from the stable building key, so they survive reordering
+ * exactly like the hand-written ones.
+ */
+const WORKS_ACHIEVEMENTS: Achievement[] = WORLD_WORKS.map((def) => ({
+  id: `works-${def.key}`,
+  name: def.label,
+  description: `Build ${theName(def.label)}. ${def.works!.boon}.`,
+  group: 'World works' as const,
+  // everBuilt, not what is standing: you earned it by building it, and demolishing it
+  // does not un-build it any more than it gives the alternative back.
+  test: (c: City) => c.everBuilt.has(def.id),
+}));
 
 export const ACHIEVEMENTS: Achievement[] = [
   // --- growth ---------------------------------------------------------------
@@ -144,6 +163,17 @@ export function snapshotFor(c: City): Snapshot {
     consecutiveSurplusMonths: c.consecutiveSurplusMonths,
   };
 }
+
+ACHIEVEMENTS.push(
+  ...WORKS_ACHIEVEMENTS,
+  { id: 'works-three', name: 'A city with a history', group: 'World works',
+    description: 'Build three world works. Each one closes off what you did not choose.',
+    test: (c) => {
+      let n = 0;
+      for (const id of c.everBuilt) if (WORKS_IDS.has(id)) n++;
+      return n >= 3;
+    } },
+);
 
 function keyOf(c: City, i: number): string {
   for (const [key, def] of CIVIC_BY_KEY) if (def.id === c.tiles.civic[i]) return key;
