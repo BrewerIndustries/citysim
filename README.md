@@ -44,8 +44,8 @@ a ¾ view for when you're looking. Offline, single-player, no DRM, no timers.
 - **Art:** architectural scale model — matte materials, heavy ambient occlusion, semantic
   palette by land use, modular kit-of-parts buildings. Realistic proportions, not
   photoreal surfaces.
-- **Next:** dirty-chunk updates to bring Tier 3 under budget, then the orthographic ¾
-  renderer over the same simulation.
+- **Next:** the orthographic ¾ renderer over the same simulation. The current top-down
+  view is Plan Mode, which was always going to come first.
 
 ## How to play
 
@@ -108,25 +108,36 @@ space-drag to pan.
 - **Terrain** — every new city gets a generated map with rivers and lakes. Water can't be
   built on, and the waterfront is an amenity, so the coastline shapes where the city wants
   to grow. Stored as a seed, not a height map, which keeps saves at ~1 KB.
+- **Progression** — seven power plants and five service upgrades that unlock as the city
+  earns them, measured against peak population and buildings ever built. The energy ladder
+  is a real trade-off at every rung: coal is cheap and filthy, wind is spotless but tiny,
+  and the clean and dirty branches both have to be walked to reach fusion.
+- **Dirty-chunk simulation** — a field is only recomputed where its source changed, which
+  is sound because every diffused field is a pure function of its source. A test runs the
+  incremental path and a full recompute side by side and asserts they agree bit for bit.
 - **Benchmark harness** — synthetic city generator for any tier, written before any
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 70 tests
+npm test          # 87 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 
-### Measured (M1 Pro, per 100ms tick budget)
+### Measured (M1 Pro, per 100 ms tick budget)
 
-| | Grid | Sim cost | Headroom | |
+Now measuring the whole of `City.step()`, not diffusion alone. With dirty-region tracking
+a single number would be dishonest — the cost depends entirely on how much is changing.
+
+| | Grid | Filling in | Mature city | |
 |---|---|---|---|---|
-| Tier 1 | 512² | 9.8 ms | 10.2× | ✅ ship gate |
-| Tier 2 | 1024² | 45.1 ms | 2.2× | ✅ |
-| Tier 3 | 2048² | 178.4 ms | 0.6× | ❌ needs dirty-chunk updates |
+| Tier 1 | 512² | 7.2 ms | 2.0 ms | ✅ ship gate, 13.9× headroom |
+| Tier 2 | 1024² | 72 ms | 10.6 ms | ✅ |
+| Tier 3 | 2048² | 261 ms | 118 ms | ⚠️ graceful degradation, not a stall |
 
-Browser matches Node (10.1 ms vs 9.8 ms at Tier 1), so the Web Worker path costs nothing.
-Tier 3 being over budget is the expected next piece of architectural work, and now it's
-evidence rather than a guess.
+Tier 3 came down from 942 ms. A mature 19-million-person metropolis across 268 km² runs at
+about 8 ticks/sec instead of 10 — the degradation the tier allows. A city still filling in
+across the whole map costs more, because when half the map changes at once you have to
+recompute half the map.
 
 ## Status
 
