@@ -14,6 +14,7 @@ import type { Fields } from './fields.ts';
 import { FIELD_MAX } from './fields.ts';
 import type { Tiles } from './tiles.ts';
 import type { Rng } from './rng.ts';
+import type { ChangeLog } from './dirty.ts';
 
 /** Fraction of base risk removed by complete fire coverage. */
 const COVER_EFFECT = 0.92;
@@ -53,6 +54,7 @@ export function updateFireRisk(fields: Fields, tiles: Tiles): void {
  */
 export function stepFires(
   grid: Grid, fields: Fields, tiles: Tiles, rng: Rng, developedCells: number,
+  changes: ChangeLog,
 ): FireEvent[] {
   if (developedCells === 0) return [];
   const risk = fields.get('fireRisk');
@@ -71,7 +73,7 @@ export function stepFires(
     const p = (risk[i] / FIELD_MAX) * IGNITION_RATE * scale * FIELD_MAX;
     if (rng.next() >= p) continue;
 
-    const burned = burn(grid, tiles, cover, rng, i);
+    const burned = burn(grid, tiles, cover, rng, i, changes);
     events.push({ x: i & (grid.width - 1), y: i >>> grid.shift, burned });
   }
   return events;
@@ -79,7 +81,7 @@ export function stepFires(
 
 /** Level the tile and try to spread into adjacent developed tiles. */
 function burn(
-  grid: Grid, tiles: Tiles, cover: Float32Array, rng: Rng, start: number,
+  grid: Grid, tiles: Tiles, cover: Float32Array, rng: Rng, start: number, changes: ChangeLog,
 ): number {
   const { width, height } = grid;
   const { level, distress } = tiles;
@@ -91,6 +93,7 @@ function burn(
     if (level[i] === 0) continue;
     level[i] = 0;
     distress[i] = 0;
+    changes.addAt(i, i & (width - 1), i >>> grid.shift);
     burned++;
     if (burned > 24) break; // a single fire can't consume the whole city
 

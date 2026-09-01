@@ -8,13 +8,14 @@ import { Fields } from './fields.ts';
 import { Simulation } from './sim.ts';
 import { Tiles, CIVIC_BY_ID, CIVIC_DEFS, ZONE_RES, ZONE_COM, ZONE_IND, MAX_LEVEL } from './tiles.ts';
 import { recomputeRoadDistance, ROAD_REACH } from './roads.ts';
-import { distributePower, type PowerReport } from './power.ts';
+import { PowerGrid, type PowerReport } from './power.ts';
 import { stepGrowth, tallyCity, requiredDesirability, type GrowthStats } from './growth.ts';
 import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
 import { updateFireRisk, stepFires } from './fire.ts';
 import { History } from './history.ts';
 import { Terrain } from './terrain.ts';
 import { lockReason, unlockedIds, type UnlockState } from './unlocks.ts';
+import { ChangeLog } from './dirty.ts';
 import { emptySeries, pushSample, type SeriesData } from './history-series.ts';
 
 export const TICKS_PER_MONTH = 8;
@@ -28,6 +29,8 @@ export const ROAD_REMOVE_COST = 2;
 export const MESSAGE_TTL = 220;
 /** Amenity value of a waterfront tile. Below a park's, but it runs the whole coast. */
 export const SHORE_AMENITY = 48;
+/** Source fields written from what the player has built. */
+const GROWTH_SOURCE_FIELDS = ['popR', 'jobsC', 'jobsI', 'emission', 'crimeGen'] as const;
 
 export interface Ledger {
   taxR: number;
@@ -76,14 +79,27 @@ export class City {
 
   private roadsDirty = true;
   private civicsDirty = true;
+  /** Cells whose authored state changed and whose source values need rewriting. */
+  /**
+   * Sized to the map: at Tier 3 a busy tick can change tens of thousands of cells, and
+   * a small cap meant the log overflowed constantly and fell back to rebuilding every
+   * source over the whole grid — which cost more than the tracking saved.
+   */
+  private readonly changes: ChangeLog;
+  /** Set when a change is too broad to track cell by cell (load, undo, first tick). */
+  private sourcesAllDirty = true;
   /** Fires draw from their own stream so toggling them can't shift the rest of the sim. */
   private readonly rngFire: Rng;
   private readonly queue: Int32Array;
-  private readonly seen: Uint8Array;
+  private readonly powerGrid: PowerGrid;
+  /** Maintained as things are built, so the monthly ledger needs no full-grid scan. */
+  private sourceRegions: import('./dirty.ts').DirtyRegion[] | undefined;
+  private roadCells = 0;
+  private civicUpkeep = 0;
   private tickCount = 0;
 
-  constructor(size: number, seed = 1, mapSeed = seed) {
-    this.sim = new Simulation({ width: size, height: size, seed });
+  constructor(size: number, seed = 1, mapSeed = seed, fullRecompute = false) {
+    this.sim = new Simulation({ width: size, height: size, seed, fullRecompute });
     this.mapSeed = mapSeed;
     this.grid = this.sim.grid;
     this.fields = this.sim.fields;
@@ -93,7 +109,8 @@ export class City {
     this.terrain = new Terrain(this.grid, mapSeed);
     this.refreshUnlocks();
     this.queue = new Int32Array(this.grid.size);
-    this.seen = new Uint8Array(this.grid.size);
+    this.powerGrid = new PowerGrid(this.grid.size);
+    this.changes = new ChangeLog(Math.min(this.grid.size, 1 << 20));
   }
 
   get tick(): number { return this.tickCount; }
@@ -105,13 +122,28 @@ export class City {
    * Used after loading, where tiles are restored but every field starts at zero — the
    * staggered coverage passes need ~10 ticks before they've all run at least once.
    */
+  /** Rebuild the incremental ledger counters from scratch. */
+  recountUpkeep(): void {
+    const { road, civic, civicAnchor } = this.tiles;
+    let roads = 0;
+    let upkeep = 0;
+    for (let i = 0; i < road.length; i++) {
+      if (road[i]) roads++;
+      if (civicAnchor[i]) upkeep += CIVIC_BY_ID.get(civic[i])?.upkeep ?? 0;
+    }
+    this.roadCells = roads;
+    this.civicUpkeep = upkeep;
+  }
+
   settleFields(ticks: number): void {
+    this.sourcesAllDirty = true;
+    this.recountUpkeep();
     for (let n = 0; n < ticks; n++) {
       if (this.roadsDirty) { recomputeRoadDistance(this.grid, this.tiles, this.queue); this.roadsDirty = false; }
       if (this.civicsDirty) { this.writeCivicSources(); this.civicsDirty = false; }
-      this.writeGrowthSources();
+      this.applySourceChanges();
       this.sim.step();
-      this.power = distributePower(this.grid, this.tiles, this.queue, this.seen);
+      this.power = this.powerGrid.step(this.grid, this.tiles);
     }
     updateFireRisk(this.fields, this.tiles);
     // Populate the census so a freshly loaded city doesn't report zero residents, and
@@ -119,10 +151,22 @@ export class City {
     this.stats = tallyCity(this.tiles);
   }
 
-  markRoadsDirty(): void { this.roadsDirty = true; }
-  markCivicsDirty(): void { this.civicsDirty = true; }
+  markRoadsDirty(): void { this.roadsDirty = true; this.powerGrid.markDirty(); }
+  markCivicsDirty(): void { this.civicsDirty = true; this.powerGrid.markDirty(); }
+
+  /** Set to accumulate per-phase timings into `profile`. Off by default. */
+  profiling = false;
+  profile: Record<string, number> = {};
+
+  private phase(name: string, fn: () => void): void {
+    if (!this.profiling) { fn(); return; }
+    const t0 = performance.now();
+    fn();
+    this.profile[name] = (this.profile[name] ?? 0) + (performance.now() - t0);
+  }
 
   step(): void {
+    if (this.profiling) this.profile = {};
     if (this.roadsDirty) {
       recomputeRoadDistance(this.grid, this.tiles, this.queue);
       this.roadsDirty = false;
@@ -132,15 +176,19 @@ export class City {
       this.civicsDirty = false;
     }
 
-    this.writeGrowthSources();
-    this.sim.step();
-    this.power = distributePower(this.grid, this.tiles, this.queue, this.seen);
-    this.stats = stepGrowth(
-      this.grid, this.tiles, this.fields, this.demand, this.tickCount, this.reason,
-    );
-    updateFireRisk(this.fields, this.tiles);
+    this.phase('sources', () => this.applySourceChanges());
+    this.phase('diffusion', () => this.sim.step());
+    this.phase('power', () => { this.power = this.powerGrid.step(this.grid, this.tiles); });
+    this.changes.reset();
+    this.phase('growth', () => {
+      this.stats = stepGrowth(
+        this.grid, this.tiles, this.fields, this.demand, this.tickCount, this.reason,
+        this.changes,
+      );
+    });
+    this.phase('fireRisk', () => updateFireRisk(this.fields, this.tiles));
     if (this.firesEnabled) {
-      for (const f of stepFires(this.grid, this.fields, this.tiles, this.rngFire, this.stats.developedCells)) {
+      for (const f of stepFires(this.grid, this.fields, this.tiles, this.rngFire, this.stats.developedCells, this.changes)) {
         this.firesTotal++;
         this.tilesLostToFire += f.burned;
         this.pushMessage(
@@ -162,7 +210,7 @@ export class City {
     );
 
     this.tickCount++;
-    if (this.tickCount % TICKS_PER_MONTH === 0) this.advanceMonth();
+    if (this.tickCount % TICKS_PER_MONTH === 0) this.phase('month', () => this.advanceMonth());
   }
 
   private advanceMonth(): void {
@@ -173,17 +221,10 @@ export class City {
     l.taxC = s.jobsC * 0.16 * this.tax.c;
     l.taxI = s.jobsI * 0.14 * this.tax.i;
 
-    let civicUpkeep = 0;
-    for (let i = 0; i < this.tiles.civic.length; i++) {
-      if (!this.tiles.civicAnchor[i]) continue;
-      const def = CIVIC_BY_ID.get(this.tiles.civic[i]);
-      if (def) civicUpkeep += def.upkeep;
-    }
-    let roadCells = 0;
-    for (let i = 0; i < this.tiles.road.length; i++) if (this.tiles.road[i]) roadCells++;
-
-    l.upkeepCivic = civicUpkeep;
-    l.upkeepRoads = roadCells * ROAD_UPKEEP;
+    // Counted incrementally as things are built and demolished. Two full-grid scans a
+    // month cost 35ms a tick at Tier 3 for numbers that change by one at a time.
+    l.upkeepCivic = this.civicUpkeep;
+    l.upkeepRoads = this.roadCells * ROAD_UPKEEP;
     l.net = l.taxR + l.taxC + l.taxI - l.upkeepCivic - l.upkeepRoads;
 
     this.funds += l.net;
@@ -230,9 +271,14 @@ export class City {
   private averageOverBuilt(field: string): number {
     const plane = this.fields.get(field as never);
     const { level } = this.tiles;
+    // Sampled rather than exhaustive: this feeds a graph line, and scanning four million
+    // cells twice a month to refine a plotted average by a fraction of a percent is not
+    // a good trade. The stride is coprime with the row width so it doesn't sample the
+    // same column of every row.
+    const stride = level.length > 1 << 20 ? 17 : 1;
     let sum = 0;
     let n = 0;
-    for (let i = 0; i < level.length; i++) {
+    for (let i = 0; i < level.length; i += stride) {
       if (level[i] === 0) continue;
       sum += plane[i];
       n++;
@@ -280,45 +326,93 @@ export class City {
     return out;
   }
 
-  /** Population, jobs and nuisance sources are a direct read of what's built. */
-  private writeGrowthSources(): void {
-    const { zone, density, level } = this.tiles;
-    const popR = this.fields.get('popR');
-    const jobsC = this.fields.get('jobsC');
-    const jobsI = this.fields.get('jobsI');
-    const emission = this.fields.get('emission');
-    const crimeGen = this.fields.get('crimeGen');
-    popR.fill(0); jobsC.fill(0); jobsI.fill(0);
-    emission.fill(0); crimeGen.fill(0);
+  /**
+   * Bring the source fields in line with what's built.
+   *
+   * The first version rewrote all five planes over the entire grid every tick, which
+   * meant every source was always dirty and no diffusion pass could ever be skipped.
+   * Now only the cells that actually changed are rewritten, and the simulation is told
+   * exactly where — which is what lets a settled city cost almost nothing.
+   */
+  private applySourceChanges(): void {
+    if (this.sourcesAllDirty) {
+      this.writeGrowthSources();
+      this.sim.markAllDirty();
+      this.sourcesAllDirty = false;
+      this.changes.reset();
+      return;
+    }
+    if (this.changes.overflowed) {
+      this.writeGrowthSources();
+      this.sim.markAllDirty();
+      this.changes.reset();
+      return;
+    }
+    // Mark each changed CELL, not the bounding box of all of them. Six scattered fires
+    // across a 2048-cell map have a bounding box covering the entire map, so marking by
+    // bounds re-diffused everything and threw away the whole benefit of chunk tracking.
+    // The regions are resolved once so this stays a tight loop.
+    const regions = this.sourceRegions ??= this.sim.sourceRegions(GROWTH_SOURCE_FIELDS);
+    const mask = this.grid.width - 1;
+    const shift = this.grid.shift;
+    for (let n = 0; n < this.changes.count; n++) {
+      const i = this.changes.at(n);
+      this.writeSourcesAt(i);
+      const x = i & mask;
+      const y = i >>> shift;
+      for (let r = 0; r < regions.length; r++) regions[r].mark(x, y);
+    }
+  }
 
-    for (let i = 0; i < zone.length; i++) {
-      const lvl = level[i];
-      if (lvl === 0) continue;
-      const z = zone[i];
-      const den = density[i];
-      if (z === ZONE_RES) {
-        popR[i] = lvl * (den + 1) * 6;
-        emission[i] = lvl * 0.4;
-        crimeGen[i] = 1.5 + lvl * (den + 1) * 0.5;
-      } else if (z === ZONE_COM) {
-        jobsC[i] = lvl * (den + 1) * 4;
-        emission[i] = lvl * 0.9;
-        crimeGen[i] = 2 + lvl * (den + 1) * 0.6;
-      } else if (z === ZONE_IND) {
-        jobsI[i] = lvl * (den + 1) * 5;
-        emission[i] = 8 + lvl * (den + 1) * 3.2;
-        crimeGen[i] = 1.5 + lvl * 0.4;
-      }
+  private recordChange(i: number): void {
+    this.changes.addAt(i, i & (this.grid.width - 1), i >>> this.grid.shift);
+  }
+
+  /** Recompute one cell's contribution to every source field it can write. */
+  private writeSourcesAt(i: number): void {
+    const { zone, density, level, civic } = this.tiles;
+    const f = this.fields;
+    const popR = f.get('popR');
+    const jobsC = f.get('jobsC');
+    const jobsI = f.get('jobsI');
+    const emission = f.get('emission');
+    const crimeGen = f.get('crimeGen');
+
+    popR[i] = 0; jobsC[i] = 0; jobsI[i] = 0; emission[i] = 0; crimeGen[i] = 0;
+
+    const civicId = civic[i];
+    if (civicId) {
+      const def = CIVIC_BY_ID.get(civicId);
+      if (def?.pollution) emission[i] = def.pollution;
+      return;
     }
 
-    // Power plants smoke. Until now nothing made civic buildings emit at all, so the
-    // coal plant the manual called "filthy" was in fact perfectly clean — and the
-    // entire clean-versus-dirty trade-off was decorative.
-    const { civic } = this.tiles;
-    for (let i = 0; i < civic.length; i++) {
-      if (!civic[i]) continue;
-      const def = CIVIC_BY_ID.get(civic[i]);
-      if (def?.pollution) emission[i] = def.pollution;
+    const lvl = level[i];
+    if (lvl === 0) return;
+    const z = zone[i];
+    const den = density[i];
+    if (z === ZONE_RES) {
+      popR[i] = lvl * (den + 1) * 6;
+      emission[i] = lvl * 0.4;
+      crimeGen[i] = 1.5 + lvl * (den + 1) * 0.5;
+    } else if (z === ZONE_COM) {
+      jobsC[i] = lvl * (den + 1) * 4;
+      emission[i] = lvl * 0.9;
+      crimeGen[i] = 2 + lvl * (den + 1) * 0.6;
+    } else if (z === ZONE_IND) {
+      jobsI[i] = lvl * (den + 1) * 5;
+      emission[i] = 8 + lvl * (den + 1) * 3.2;
+      crimeGen[i] = 1.5 + lvl * 0.4;
+    }
+  }
+
+  /** Population, jobs and nuisance sources are a direct read of what's built. */
+  private writeGrowthSources(): void {
+    for (const name of GROWTH_SOURCE_FIELDS) this.fields.get(name as never).fill(0);
+    const { zone, level, civic } = this.tiles;
+    for (let i = 0; i < zone.length; i++) {
+      if (level[i] === 0 && civic[i] === 0) continue;
+      this.writeSourcesAt(i);
     }
   }
 
@@ -336,6 +430,8 @@ export class City {
     const amenity = this.fields.get('amenity');
     const shore = this.terrain.shore;
     for (let i = 0; i < shore.length; i++) if (shore[i]) amenity[i] = SHORE_AMENITY;
+    // Civic sources changed wholesale; the affected fields are cheap and rarely touched.
+    for (const def of CIVIC_DEFS) if (def.source) this.sim.markSourceAll(def.source.field);
     const { civic, civicAnchor } = this.tiles;
     for (let i = 0; i < civic.length; i++) {
       if (!civicAnchor[i]) continue;
@@ -373,8 +469,12 @@ export class City {
 
   /** Roads and civic sources are derived from tiles, so both must be rebuilt. */
   private afterHistoryChange(): void {
+    // Undo restores arbitrarily many tiles at once; rebuilding every source is far
+    // simpler than trying to track what a restore touched.
+    this.sourcesAllDirty = true;
     this.markRoadsDirty();
     this.markCivicsDirty();
+    this.recountUpkeep();
     this.stats = tallyCity(this.tiles);
   }
 
@@ -395,6 +495,8 @@ export class City {
     t.road[i] = 1;
     t.zone[i] = 0;
     t.level[i] = 0;
+    this.roadCells++;
+    this.recordChange(i);
     this.markRoadsDirty();
     return true;
   }
@@ -409,6 +511,7 @@ export class City {
     t.zone[i] = zone;
     t.density[i] = density;
     if (t.level[i] > MAX_LEVEL[density]) t.level[i] = MAX_LEVEL[density];
+    this.recordChange(i);
     return true;
   }
 
@@ -443,9 +546,11 @@ export class City {
         this.tiles.zone[i] = 0;
         this.tiles.level[i] = 0;
         this.tiles.civicAnchor[i] = 0;
+        this.recordChange(i);
       }
     }
     this.tiles.civicAnchor[anchor] = 1;
+    this.civicUpkeep += def.upkeep;
     if (!this.everBuilt.has(def.id)) {
       this.everBuilt.add(def.id);
       this.refreshUnlocks(true);
@@ -467,6 +572,7 @@ export class City {
     this.history.touch(t, i);
     this.spend(ROAD_REMOVE_COST);
     t.road[i] = 0;
+    this.roadCells--;
     this.markRoadsDirty();
     return true;
   }
@@ -491,19 +597,22 @@ export class City {
           const j = this.grid.index(x, y);
           if (t.civic[j] === hadCivic) {
             this.history.touch(t, j);
+            if (t.civicAnchor[j]) this.civicUpkeep -= def.upkeep;
             t.civic[j] = 0;
             t.civicAnchor[j] = 0;
+            this.recordChange(j);
           }
         }
       }
       this.markCivicsDirty();
     }
-    if (t.road[i]) this.markRoadsDirty();
+    if (t.road[i]) { this.roadCells--; this.markRoadsDirty(); }
     t.road[i] = 0;
     t.zone[i] = 0;
     t.density[i] = 0;
     t.level[i] = 0;
     t.distress[i] = 0;
+    this.recordChange(i);
     return true;
   }
 

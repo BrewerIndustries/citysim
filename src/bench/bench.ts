@@ -5,13 +5,22 @@
  *   Tier 2 — 1024^2, ~1M pop        must remain reachable
  *   Tier 3 — 2048^2, multi-million  may degrade, must never stall
  *
- * Budget: at 10 ticks/sec the simulation has 100ms per tick. It shares the frame with
- * rendering, so the real working target is well under that.
+ * Budget: at 10 ticks/sec the simulation has 100ms per tick, shared with rendering.
+ *
+ * Three regimes are reported, because with dirty-region tracking a single number would
+ * be dishonest — the cost depends entirely on how much is changing:
+ *
+ *   cold     every field recomputed over the whole grid (first tick, or after a load)
+ *   growing  a live city with buildings developing and decaying
+ *   settled  nothing changing; the diffusion is skipped outright
+ *
+ * The GATE is the growing figure: it's what a player actually experiences.
  *
  *   node src/bench/bench.ts               # tiers 1 and 2
  *   node src/bench/bench.ts --tiers=1,2,3
  */
 import { generateCity } from './generate.ts';
+import type { City } from '../sim/city.ts';
 
 const TIERS: Record<string, { size: number; label: string }> = {
   '1': { size: 512, label: 'Tier 1  (ship gate)' },
@@ -24,53 +33,59 @@ const TICK_BUDGET_MS = 100;
 const arg = process.argv.find((a) => a.startsWith('--tiers='));
 const wanted: string[] = (arg ? arg.slice('--tiers='.length) : '1,2').split(',');
 
-function measure(size: number, forceAllPasses: boolean, ticks: number) {
-  const t0 = performance.now();
-  const { sim, population, builtCells } = generateCity(size, size, 1, forceAllPasses);
-  const genMs = performance.now() - t0;
-
-  for (let i = 0; i < 3; i++) sim.step(); // warm up the JIT
-
+function timeTicks(city: City, ticks: number): { median: number; p95: number; max: number } {
   const samples: number[] = [];
   for (let i = 0; i < ticks; i++) {
-    const s = performance.now();
-    sim.step();
-    samples.push(performance.now() - s);
+    const t0 = performance.now();
+    city.step();
+    samples.push(performance.now() - t0);
   }
   samples.sort((a, b) => a - b);
   return {
-    sim,
-    population,
-    builtCells,
-    genMs,
     median: samples[Math.floor(samples.length / 2)],
     p95: samples[Math.floor(samples.length * 0.95)],
     max: samples[samples.length - 1],
   };
 }
 
-console.log('\ncitysim simulation benchmark');
+console.log('\ncitysim benchmark — full City.step()');
 console.log(`node ${process.version} | budget ${TICK_BUDGET_MS}ms/tick at 10 ticks/sec\n`);
 
 for (const key of wanted) {
   const tier = TIERS[key.trim()];
   if (!tier) continue;
 
-  const ticks = tier.size >= 2048 ? 20 : 60;
-  const staggered = measure(tier.size, false, ticks);
-  const worst = measure(tier.size, true, ticks);
+  const t0 = performance.now();
+  const { city, population, builtCells } = generateCity(tier.size, 1);
+  const genMs = performance.now() - t0;
 
-  const g = staggered.sim.grid;
-  const memMB = staggered.sim.fields.bytes / 1024 / 1024;
-  const pct = (staggered.median / TICK_BUDGET_MS) * 100;
-  const verdict = staggered.p95 < TICK_BUDGET_MS ? 'PASS' : 'OVER BUDGET';
+  // Cold: the first tick rebuilds every source and diffuses the entire grid.
+  const coldStart = performance.now();
+  city.step();
+  const coldMs = performance.now() - coldStart;
+
+  const ticks = tier.size >= 2048 ? 24 : 60;
+  for (let i = 0; i < 4; i++) city.step(); // warm the JIT
+  const growing = timeTicks(city, ticks);
+
+  // Settled: freeze the city so nothing changes and only the fixed costs remain.
+  city.firesEnabled = false;
+  const demand = { r: -1, c: -1, i: -1 };
+  Object.defineProperty(city, 'demand', { get: () => demand, set: () => {}, configurable: true });
+  for (let i = 0; i < 20; i++) city.step();
+  const settled = timeTicks(city, ticks);
+
+  const g = city.grid;
+  const memMB = city.fields.bytes / 1024 / 1024;
+  const verdict = growing.p95 < TICK_BUDGET_MS ? 'PASS' : 'OVER BUDGET';
 
   console.log(`${tier.label}  —  ${g.toString()}`);
-  console.log(`  population       ${staggered.population.toLocaleString()} across ${staggered.builtCells.toLocaleString()} built cells`);
-  console.log(`  field memory     ${memMB.toFixed(1)} MB (${(staggered.sim.fields.byName.size)} planes + scratch)`);
-  console.log(`  generate         ${staggered.genMs.toFixed(0)} ms`);
-  console.log(`  tick (staggered) median ${staggered.median.toFixed(2)} ms   p95 ${staggered.p95.toFixed(2)} ms   max ${staggered.max.toFixed(2)} ms`);
-  console.log(`  tick (all passes) median ${worst.median.toFixed(2)} ms   p95 ${worst.p95.toFixed(2)} ms`);
-  console.log(`  budget           ${pct.toFixed(1)}% of ${TICK_BUDGET_MS}ms   ->  ${verdict}`);
-  console.log(`  headroom         ${(TICK_BUDGET_MS / staggered.median).toFixed(1)}x\n`);
+  console.log(`  population       ${population.toLocaleString()} across ${builtCells.toLocaleString()} built cells`);
+  console.log(`  field memory     ${memMB.toFixed(1)} MB`);
+  console.log(`  generate         ${genMs.toFixed(0)} ms`);
+  console.log(`  cold tick        ${coldMs.toFixed(1)} ms   (full recompute, e.g. after a load)`);
+  console.log(`  growing          median ${growing.median.toFixed(2)} ms   p95 ${growing.p95.toFixed(2)} ms   max ${growing.max.toFixed(2)} ms`);
+  console.log(`  settled          median ${settled.median.toFixed(2)} ms   p95 ${settled.p95.toFixed(2)} ms`);
+  console.log(`  budget           ${((growing.median / TICK_BUDGET_MS) * 100).toFixed(1)}% of ${TICK_BUDGET_MS}ms  ->  ${verdict}`);
+  console.log(`  headroom         ${(TICK_BUDGET_MS / growing.median).toFixed(1)}x\n`);
 }

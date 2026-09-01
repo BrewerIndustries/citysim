@@ -11,6 +11,7 @@ import type { Fields } from './fields.ts';
 import { Tiles, ZONE_RES, ZONE_COM, ZONE_IND, MAX_LEVEL } from './tiles.ts';
 import { ROAD_REACH } from './roads.ts';
 import type { Demand } from './demand.ts';
+import type { ChangeLog } from './dirty.ts';
 
 export const REASON = {
   GROWING: 0,
@@ -104,6 +105,7 @@ export function tallyCity(tiles: Tiles): GrowthStats {
  */
 export function stepGrowth(
   grid: Grid, tiles: Tiles, fields: Fields, demand: Demand, tick: number, reason: Uint8Array,
+  changes: ChangeLog,
 ): GrowthStats {
   const { zone, density, level, roadDist, powered, distress, civic } = tiles;
   const dR = fields.get('desirabilityR');
@@ -151,6 +153,7 @@ export function stepGrowth(
         level[i] = lvl - 1;
         distress[i] = 0;
         abandonedThisTick++;
+        changes.addAt(i, i & (grid.width - 1), i >>> grid.shift);
       } else {
         distress[i] = d;
       }
@@ -174,6 +177,7 @@ export function stepGrowth(
     if (gate < 0.02 + wants * 0.05) {
       level[i] = lvl + 1;
       grewThisTick++;
+      changes.addAt(i, i & (grid.width - 1), i >>> grid.shift);
       if (z === ZONE_RES) population += residentsAt(lvl + 1, den) - residentsAt(lvl, den);
       else if (z === ZONE_COM) jobsC += jobsAt(lvl + 1, den, z) - jobsAt(lvl, den, z);
       else jobsI += jobsAt(lvl + 1, den, z) - jobsAt(lvl, den, z);
