@@ -153,3 +153,52 @@ test('undo works on a running city and the simulation keeps up', () => {
   assert.equal(c.stats.population, 0, 'nothing should remain after undoing the entire city');
   assert.equal(c.tiles.roadDist[g.index(30, 38)], 255, 'road distance must be recomputed');
 });
+
+test('undo restores utilities, not just the money spent on them', () => {
+  // These planes were missing from the undo record, so laying a pipe and pressing undo
+  // refunded you and left the pipe on the map.
+  const c = new City(128, 1, FLAT_MAP);
+  c.funds = 100_000;
+  const i = c.grid.index(40, 40);
+
+  c.beginStroke('s1', 'Power line');
+  assert.ok(c.buildUtility(i, 'powerLine'));
+  assert.ok(c.buildUtility(i, 'pipe'));
+  c.endStroke();
+  const spent = 100_000 - c.funds;
+  assert.ok(spent > 0, 'the stroke should have cost something');
+
+  assert.equal(c.undo(), 'Power line');
+  assert.equal(c.tiles.powerLine[i], 0, 'undo must take the line back up');
+  assert.equal(c.tiles.pipe[i], 0, 'and the pipe');
+  assert.equal(c.funds, 100_000, 'and refund exactly what it cost');
+
+  assert.equal(c.redo(), 'Power line');
+  assert.equal(c.tiles.powerLine[i], 1);
+  assert.equal(c.tiles.pipe[i], 1);
+});
+
+test('undoing a remove brings back everything the drag took, in one step', () => {
+  const c = new City(128, 1, FLAT_MAP);
+  c.funds = 100_000;
+  const cells = [0, 1, 2, 3].map((n) => c.grid.index(40 + n, 40));
+  c.beginStroke('build', 'Road');
+  for (const i of cells) {
+    assert.ok(c.buildRoad(i));
+    assert.ok(c.buildUtility(i, 'powerLine'));
+    assert.ok(c.buildUtility(i, 'sewer'));
+  }
+  c.endStroke();
+
+  c.beginStroke('wipe', 'Remove');
+  for (const i of cells) assert.ok(c.removeAt(i, 'all'));
+  c.endStroke();
+  for (const i of cells) assert.equal(c.tiles.road[i], 0);
+
+  assert.equal(c.undo(), 'Remove');
+  for (const i of cells) {
+    assert.equal(c.tiles.road[i], 1, 'the road comes back');
+    assert.equal(c.tiles.powerLine[i], 1, 'so does the line');
+    assert.equal(c.tiles.sewer[i], 1, 'and the sewer');
+  }
+});

@@ -35,6 +35,10 @@ export const PIPE_UPKEEP = 0.15;
 
 /** The three networks a player lays by hand. */
 export type UtilityKind = 'powerLine' | 'pipe' | 'sewer';
+export const UTILITY_KINDS: readonly UtilityKind[] = ['powerLine', 'pipe', 'sewer'];
+
+/** What the Remove tool should take off a tile. */
+export type RemoveTarget = 'all' | 'road' | UtilityKind;
 /** Ticks a one-off event (a fire, a flood, an achievement) stays on screen. */
 export const MESSAGE_TTL = 220;
 /**
@@ -685,6 +689,23 @@ export class City {
     this.utilityCells[kind]--;
     this.markUtilitiesDirty();
     return true;
+  }
+
+  /**
+   * Take one thing, or everything, off a tile — the non-destructive counterpart to the
+   * bulldozer, which leaves zoning and buildings alone.
+   *
+   * `all` clears the utilities first and then the road, so a single drag over a street
+   * empties it completely; the whole drag is one undo step, which is what makes that
+   * safe to offer as the default. Naming a single target is how you pull a sewer out
+   * from under a road you want to keep.
+   */
+  removeAt(i: number, target: RemoveTarget): boolean {
+    if (target === 'road') return this.removeRoad(i);
+    if (target !== 'all') return this.removeUtility(i, target);
+    let removed = false;
+    for (const kind of UTILITY_KINDS) removed = this.removeUtility(i, kind) || removed;
+    return this.removeRoad(i) || removed;
   }
 
   /** Why a utility can't be laid here, for the interface to explain. */

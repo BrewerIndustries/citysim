@@ -12,7 +12,17 @@
 import type { Tiles } from './tiles.ts';
 
 /** Authored planes only — derived state (powered, roadDist) is recomputed. */
-const PLANES = ['zone', 'density', 'road', 'level', 'civic', 'civicAnchor', 'distress'] as const;
+/**
+ * The planes undo captures. This must list every plane a TOOL can write; anything
+ * missing is silently un-undoable — the money comes back and the tile does not. The
+ * utility planes were missing from the day they were added, so laying a pipe and
+ * pressing undo refunded you and left the pipe. Derived planes (powered, watered,
+ * sewered, roadDist) are deliberately absent: they are recomputed after a restore.
+ */
+const PLANES = [
+  'zone', 'density', 'road', 'powerLine', 'pipe', 'sewer',
+  'level', 'civic', 'civicAnchor', 'distress',
+] as const;
 const PLANE_COUNT = PLANES.length;
 
 export interface Command {

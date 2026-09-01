@@ -145,6 +145,10 @@ space-drag to pan.
   (6,000 people) and a reclamation works (18,000) project remediation over the land and
   pull the pollution field back down, so a district ruined by early industry can be
   reclaimed rather than written off.
+- **Remove** — the careful counterpart to the bulldozer, taking up roads, power lines,
+  pipes and sewers while leaving zoning and buildings alone. Clears everything on a tile
+  by default; a target row narrows it to one network when you need to pull a sewer out
+  from under a street you are keeping.
 - **Draw modes** — free-hand, line, or rectangle. Roads default to lines, zoning to
   rectangles; nothing is built until the drag ends, so the shape can be adjusted first.
 - **Two views over one simulation** (`Tab`) — the top-down Plan Mode you build in, and an
@@ -157,7 +161,7 @@ space-drag to pan.
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 159 tests
+npm test          # 166 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 

@@ -1,9 +1,26 @@
 import { CIVIC_DEFS } from '../sim/tiles.ts';
-import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, LINE_COST, PIPE_COST } from '../sim/city.ts';
+import {
+  ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, LINE_COST, PIPE_COST,
+  type RemoveTarget,
+} from '../sim/city.ts';
 
 export type ToolKind =
-  | 'inspect' | 'road' | 'removeroad' | 'zone' | 'civic' | 'bulldoze'
+  | 'inspect' | 'road' | 'remove' | 'zone' | 'civic' | 'bulldoze'
   | 'powerline' | 'pipe' | 'sewer';
+
+/**
+ * What the Remove tool takes off a tile. `all` is the default because "remove" with a
+ * qualifier you have to go and find is a worse tool than one that just clears the tile;
+ * the named targets are there for the one case that needs care — pulling a sewer out
+ * from under a road you want to keep.
+ */
+export const REMOVE_TARGETS: ReadonlyArray<{ target: RemoveTarget; label: string; hint: string }> = [
+  { target: 'all', label: 'All', hint: 'Road and any lines, pipes or sewers on the tile' },
+  { target: 'road', label: 'Road', hint: 'The road only, leaving the utilities under it' },
+  { target: 'powerLine', label: 'Line', hint: 'Power lines only' },
+  { target: 'pipe', label: 'Pipe', hint: 'Water pipes only' },
+  { target: 'sewer', label: 'Sewer', hint: 'Sewers only' },
+];
 
 export interface Tool {
   id: string;
@@ -51,7 +68,7 @@ const GROUP_OF: Record<string, string> = {
 export const TOOLS: Tool[] = assignKeys([
   { id: 'inspect', kind: 'inspect', label: 'Inspect', key: '', cost: 0, group: 'Basics' },
   { id: 'road', kind: 'road', label: 'Road', key: '', cost: ROAD_COST, colour: '#42464e', group: 'Basics' },
-  { id: 'removeroad', kind: 'removeroad', label: 'Remove road', key: '', cost: ROAD_REMOVE_COST, colour: '#5c5f68', group: 'Basics' },
+  { id: 'remove', kind: 'remove', label: 'Remove', key: '', cost: ROAD_REMOVE_COST, colour: '#5c5f68', group: 'Basics' },
   { id: 'bulldoze', kind: 'bulldoze', label: 'Bulldoze', key: '', cost: BULLDOZE_COST, colour: '#8a3f38', group: 'Basics' },
 
   { id: 'powerline', kind: 'powerline', label: 'Power line', key: '', cost: LINE_COST, colour: '#e0c65a', group: 'Utilities' },
@@ -102,7 +119,7 @@ export const DRAW_MODES: ReadonlyArray<{ mode: DrawMode; label: string; hint: st
 export function modesFor(kind: ToolKind): { modes: DrawMode[]; preferred: DrawMode } {
   switch (kind) {
     case 'road':
-    case 'removeroad':
+    case 'remove':
     case 'powerline':
     case 'pipe':
     case 'sewer':

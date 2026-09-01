@@ -6,6 +6,7 @@ import { SEPTIC_MAX_LEVEL, REASON } from '../src/sim/growth.ts';
 import { ZONE_RES, ZONE_COM, CIVIC_BY_KEY, CIVIC_DEFS } from '../src/sim/tiles.ts';
 import { serialize, deserialize } from '../src/sim/save.ts';
 import { wireUtilities } from './helpers.ts';
+import { REMOVE_TARGETS } from '../src/app/tools.ts';
 
 const outflow = CIVIC_BY_KEY.get('sewage')!;
 const treatment = CIVIC_BY_KEY.get('treatment')!;
@@ -300,4 +301,59 @@ test('cutting the power cuts the water with it', () => {
   for (let y = 41; y < 46; y++) c.removeUtility(g.index(40, y), 'powerLine');
   for (let t = 0; t < 4; t++) c.step();
   assert.equal(c.water.supply, 0, 'no power, no water');
+});
+
+test('the remove tool takes utilities off a tile as well as the road', () => {
+  const c = city();
+  const i = c.grid.index(40, 40);
+  assert.ok(c.buildRoad(i));
+  assert.ok(c.buildUtility(i, 'powerLine'));
+  assert.ok(c.buildUtility(i, 'pipe'));
+
+  // A named target touches nothing else, which is the point of having them.
+  assert.ok(c.removeAt(i, 'pipe'));
+  assert.equal(c.tiles.pipe[i], 0);
+  assert.equal(c.tiles.powerLine[i], 1, 'the line must survive removing the pipe');
+  assert.equal(c.tiles.road[i], 1, 'and so must the road');
+
+  assert.ok(c.removeAt(i, 'road'));
+  assert.equal(c.tiles.road[i], 0);
+  assert.equal(c.tiles.powerLine[i], 1, 'a line can outlive the street it ran under');
+});
+
+test("remove 'all' clears the tile but leaves zoning and buildings", () => {
+  const c = city();
+  const i = c.grid.index(42, 42);
+  assert.ok(c.paintZone(i, ZONE_RES, 0));
+  assert.ok(c.buildUtility(i, 'powerLine'));
+  assert.ok(c.buildUtility(i, 'sewer'));
+  const road = c.grid.index(42, 43);
+  assert.ok(c.buildRoad(road));
+
+  assert.ok(c.removeAt(i, 'all'));
+  assert.equal(c.tiles.powerLine[i], 0);
+  assert.equal(c.tiles.sewer[i], 0);
+  assert.equal(c.tiles.zone[i], ZONE_RES, 'remove is not a bulldozer');
+});
+
+test('removing nothing costs nothing and reports it', () => {
+  const c = city();
+  const i = c.grid.index(44, 44);
+  const before = c.funds;
+  assert.equal(c.removeAt(i, 'all'), false, 'an empty tile has nothing to remove');
+  assert.equal(c.removeAt(i, 'sewer'), false);
+  assert.equal(c.funds, before, 'a no-op must never be charged for');
+});
+
+test('every remove target names something the sim can actually remove', () => {
+  // The UI row is generated from REMOVE_TARGETS, so a typo there would be a button that
+  // silently does nothing.
+  const c = city();
+  const i = c.grid.index(46, 46);
+  for (const t of REMOVE_TARGETS) {
+    if (t.target === 'all') continue;
+    if (t.target === 'road') assert.ok(c.buildRoad(i));
+    else assert.ok(c.buildUtility(i, t.target), `cannot build ${t.target} to remove it`);
+    assert.ok(c.removeAt(i, t.target), `remove target '${t.target}' removed nothing`);
+  }
 });

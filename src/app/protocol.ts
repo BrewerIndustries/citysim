@@ -92,7 +92,7 @@ export type ToWorker =
 
 export type Action =
   | { kind: 'road'; cells: number[] }
-  | { kind: 'removeroad'; cells: number[] }
+  | { kind: 'remove'; cells: number[]; target: import('../sim/city.ts').RemoveTarget }
   | { kind: 'utility'; cells: number[]; utility: 'powerLine' | 'pipe' | 'sewer' }
   | { kind: 'zone'; cells: number[]; zone: number; density: number }
   | { kind: 'civic'; cell: number; civicId: number }

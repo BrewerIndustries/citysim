@@ -121,7 +121,7 @@ function monthName(m: number): string { return MONTHS[m] ?? ''; }
 function apply(c: City, a: import('./protocol.ts').Action): void {
   switch (a.kind) {
     case 'road': for (const i of a.cells) c.buildRoad(i); break;
-    case 'removeroad': for (const i of a.cells) c.removeRoad(i); break;
+    case 'remove': for (const i of a.cells) c.removeAt(i, a.target); break;
     case 'utility': {
       // A drag that is silently partly refused is the worst outcome: you pay for the
       // tiles that landed, get a dotted line that carries nothing, and are told nothing.

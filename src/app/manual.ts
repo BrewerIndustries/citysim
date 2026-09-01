@@ -17,6 +17,7 @@ import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { CELL_METRES } from '../sim/grid.ts';
 import { SHORE_AMENITY } from '../sim/city.ts';
 import { LAYERS, MAX_LAYERS } from './palette.ts';
+import { REMOVE_TARGETS } from './tools.ts';
 import { SERIES, HISTORY_LIMIT, type SeriesKey } from '../sim/history-series.ts';
 import { MAX_UNDO } from '../sim/history.ts';
 import { AUTOSAVE_MONTHS } from './autosave.ts';
@@ -139,14 +140,25 @@ export function buildManual(): ManualSection[] {
         streets just meets with nothing wasted and nothing stranded. Go one wider and a dead
         strip of unbuildable land appears down the middle. Go tighter and you are paying
         ${money(ROAD_COST)} a tile for road you did not need.</p>
-        <p>Roads also <b>carry electricity</b>. Power flows out from a plant along connected
-        roads, then reaches the same ${ROAD_REACH} tiles either side. A neighbourhood cut off
-        from the road network is cut off from the grid too.</p>
+        <p>Roads carry traffic and nothing else — <b>power, water and sewage are networks you
+        lay yourself</b>, along the same streets. A district on the road network is not
+        automatically on any of the others.</p>
         ${table(['Action', 'Cost', 'What it does'], [
           ['Road', money(ROAD_COST) + ' / tile', 'Lay a street. Drag to draw a line.'],
-          ['Remove road', money(ROAD_REMOVE_COST) + ' / tile', 'Lifts only the road. Zoning and buildings stay.'],
+          ['Remove', money(ROAD_REMOVE_COST) + ' / tile',
+            'Lifts roads and utilities. Zoning and buildings stay.'],
           ['Bulldoze', money(BULLDOZE_COST) + ' / tile', 'Clears everything on the tile — road, zoning, buildings.'],
         ])}
+        <h4>Removing things</h4>
+        <p><b>Remove</b> is the careful counterpart to the bulldozer: it takes up roads and
+        utilities and leaves your zoning and buildings alone. By default it clears
+        <b>everything it can</b> from the tiles you drag over, and the whole drag is a
+        single undo, so a mistake costs one keypress.</p>
+        <p>When you need to be precise, pick a target from the row under the tool —
+        ${REMOVE_TARGETS.filter((r) => r.target !== 'all').map((r) => `<b>${r.label}</b>`).join(', ')}
+        — and it will touch nothing else. That is how you pull a sewer out from under a
+        street you want to keep.</p>
+        ${table(['Target', 'Removes'], REMOVE_TARGETS.map((r) => [r.label, r.hint]))}
         <p>Roads cost ${money(ROAD_UPKEEP)} per tile per month to maintain, so a sprawling
         network is a permanent drain. This is the main reason not to over-build streets.</p>`,
     },

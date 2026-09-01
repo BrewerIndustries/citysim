@@ -4,12 +4,13 @@ import { CityRenderer, type Overlay } from './render.ts';
 import { View3D } from './view3d.ts';
 import { LAYERS, RAMPS, buildLut, toggleLayer } from './palette.ts';
 import {
-  TOOLS, DENSITY_LABELS, DRAW_MODES, lineCells, brushCells, rectCells, anchorFor, modesFor,
-  type Tool, type DrawMode,
+  TOOLS, DENSITY_LABELS, DRAW_MODES, REMOVE_TARGETS, lineCells, brushCells, rectCells,
+  anchorFor, modesFor, type Tool, type DrawMode,
 } from './tools.ts';
 import { REASON, REASON_TEXT, requiredDesirability } from '../sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { ZONE_LABEL, CIVIC_BY_ID, MAX_LEVEL } from '../sim/tiles.ts';
+import type { RemoveTarget } from '../sim/city.ts';
 import { buildManual, type ManualSection } from './manual.ts';
 import { writeSlot, readSlot, describeSlot, clearSlot } from './storage.ts';
 import { Chart } from './chart.ts';
@@ -53,6 +54,8 @@ let tool: Tool = TOOLS[0];
 let density = 0;
 let brush = 3;
 let drawMode: DrawMode = 'pencil';
+/** What the Remove tool takes off a tile. */
+let removeTarget: RemoveTarget = 'all';
 /**
  * Each kind of tool remembers its own draw mode, starting from what suits it — lines
  * for roads, rectangles for zoning. Sharing one mode across every tool meant picking
@@ -82,7 +85,18 @@ const post = (m: ToWorker, transfer?: Transferable[]) =>
 let strokeId = 'stroke-0';
 let strokeSeq = 0;
 function newStroke(): void { strokeId = `stroke-${++strokeSeq}`; }
-const act = (a: Action) => post({ type: 'act', action: a, strokeId, label: tool.label });
+const act = (a: Action) => post({ type: 'act', action: a, strokeId, label: undoLabel() });
+
+/**
+ * What the undo entry should be called. Normally the tool's own name, but "Remove" on
+ * its own tells you nothing a month later — which of the five things it removes did it
+ * take? — so the target is folded in.
+ */
+function undoLabel(): string {
+  if (tool.kind !== 'remove' || removeTarget === 'all') return tool.label;
+  const t = REMOVE_TARGETS.find((r) => r.target === removeTarget);
+  return t ? `Remove ${t.label.toLowerCase()}` : tool.label;
+}
 
 // ---------------------------------------------------------------- tool rail
 function buildTools(): void {
@@ -127,6 +141,22 @@ function buildTools(): void {
         db.onclick = (e) => { e.stopPropagation(); density = d; selectTool(t); };
         row.appendChild(db);
       });
+      row.style.display = t === tool ? 'flex' : 'none';
+      container!.appendChild(row);
+    }
+
+    if (t.kind === 'remove') {
+      const row = document.createElement('div');
+      row.className = 'densities targets';
+      row.dataset.targetsFor = t.id;
+      for (const r of REMOVE_TARGETS) {
+        const rb = document.createElement('button');
+        rb.textContent = r.label;
+        rb.title = r.hint;
+        rb.dataset.target = r.target;
+        rb.onclick = (e) => { e.stopPropagation(); removeTarget = r.target; selectTool(t); };
+        row.appendChild(rb);
+      }
       row.style.display = t === tool ? 'flex' : 'none';
       container!.appendChild(row);
     }
@@ -209,7 +239,13 @@ function selectTool(t: Tool): void {
   const civicDef = t.civicId ? CIVIC_BY_ID.get(t.civicId) : null;
   brush = t.kind === 'zone' || t.kind === 'bulldoze' ? 3 : civicDef ? civicDef.size : 1;
   if (t.kind === 'powerline' || t.kind === 'pipe' || t.kind === 'sewer') brush = 1;
-  if (t.kind === 'removeroad') brush = 1;
+  if (t.kind === 'remove') brush = 1;
+  for (const row of document.querySelectorAll<HTMLElement>('.densities.targets')) {
+    row.style.display = row.dataset.targetsFor === t.id ? 'flex' : 'none';
+    for (const b of row.querySelectorAll<HTMLElement>('button')) {
+      b.setAttribute('aria-pressed', String(b.dataset.target === removeTarget));
+    }
+  }
 }
 
 // ---------------------------------------------------------------- chrome
@@ -626,8 +662,11 @@ forEachCanvas((el) => el.addEventListener('pointermove', (e) => {
       cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE),
       utility: tool.kind === 'powerline' ? 'powerLine' : tool.kind === 'pipe' ? 'pipe' : 'sewer',
     });
-  } else if (tool.kind === 'removeroad') {
-    act({ kind: 'removeroad', cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE) });
+  } else if (tool.kind === 'remove') {
+    act({
+      kind: 'remove', target: removeTarget,
+      cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE),
+    });
   } else {
     applyAt(cell);
   }
@@ -677,7 +716,7 @@ function commitPreview(): void {
   if (!cells.length) return;
   switch (tool.kind) {
     case 'road': act({ kind: 'road', cells }); break;
-    case 'removeroad': act({ kind: 'removeroad', cells }); break;
+    case 'remove': act({ kind: 'remove', cells, target: removeTarget }); break;
     case 'bulldoze': act({ kind: 'bulldoze', cells }); break;
     case 'zone': act({ kind: 'zone', cells, zone: tool.zone!, density }); break;
     case 'powerline': act({ kind: 'utility', cells, utility: 'powerLine' }); break;
@@ -697,8 +736,11 @@ function applyAt(cell: { x: number; y: number }): void {
     case 'road':
       act({ kind: 'road', cells: [i] });
       break;
-    case 'removeroad':
-      act({ kind: 'removeroad', cells: brushCells(cell.x, cell.y, brush, MAP_SIZE, MAP_SIZE) });
+    case 'remove':
+      act({
+        kind: 'remove', target: removeTarget,
+        cells: brushCells(cell.x, cell.y, brush, MAP_SIZE, MAP_SIZE),
+      });
       break;
     case 'powerline':
       act({ kind: 'utility', cells: [i], utility: 'powerLine' });
