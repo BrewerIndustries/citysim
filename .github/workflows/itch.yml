@@ -1,0 +1,70 @@
+name: Publish to itch.io
+
+# Pushes the web build to itch.io with butler.
+#   dev branch  -> channel "html5-dev"   (private playtest)
+#   main branch -> channel "html5"       (the public demo)
+#
+# REQUIRES a repository secret named BUTLER_API_KEY.
+# Generate one at https://itch.io/user/settings/api-keys and add it under
+# Settings > Secrets and variables > Actions. Never commit the key.
+#
+# ITCH_TARGET is set below and must match an existing itch.io project.
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+env:
+  # <itch-username>/<project-slug> — set this once the itch.io page exists.
+  ITCH_TARGET: CHANGE-ME/citysim
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Skips cleanly (rather than failing every push) until the secret is added.
+    if: ${{ github.repository_owner != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Guard on configuration
+        id: guard
+        run: |
+          if [ -z "${{ secrets.BUTLER_API_KEY }}" ]; then
+            echo "BUTLER_API_KEY not set — skipping itch.io publish."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          elif [ "${ITCH_TARGET%%/*}" = "CHANGE-ME" ]; then
+            echo "ITCH_TARGET still placeholder — skipping itch.io publish."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        if: steps.guard.outputs.ready == 'true'
+        env:
+          BASE_PATH: ./
+        run: |
+          npm install
+          npm run build
+
+      - name: Install butler
+        if: steps.guard.outputs.ready == 'true'
+        run: |
+          curl -sL -o butler.zip https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
+          unzip -q butler.zip
+          chmod +x butler
+          ./butler -V
+
+      - name: Push to itch.io
+        if: steps.guard.outputs.ready == 'true'
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          CHANNEL="html5-dev"
+          if [ "${{ github.ref_name }}" = "main" ]; then CHANNEL="html5"; fi
+          ./butler push dist "${ITCH_TARGET}:${CHANNEL}" \
+            --userversion "0.0.1+${{ github.run_number }}"

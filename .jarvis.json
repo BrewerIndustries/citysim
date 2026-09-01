@@ -1,0 +1,12 @@
+{
+  "name": "citysim",
+  "tagline": "A SimCity-spirit city builder — field-based sim that explains itself",
+  "lane": "IN PROGRESS",
+  "category": "game",
+  "status": "Simulation spine + browser field viewer running; Steam is the target",
+  "links": {
+    "dev": "https://citysim.dabrewer.dev/dev/",
+    "prod": "https://citysim.dabrewer.dev/"
+  },
+  "tech": ["TypeScript", "three.js", "Web Worker", "Vite", "Electron", "itch.io"]
+}

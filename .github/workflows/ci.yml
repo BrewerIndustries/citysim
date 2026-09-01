@@ -1,0 +1,51 @@
+name: CI
+
+# Runs on every push and PR. The performance benchmark is a GATE, not a report:
+# docs/TECH-STACK.md makes performance a design constraint, so a Tier 1 regression
+# fails the build rather than filing a ticket.
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci || npm install
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npm run build
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci || npm install
+      - name: Simulation benchmark (Tier 1 + Tier 2)
+        run: npm run bench | tee bench.txt
+      - name: Gate on Tier 1 budget
+        run: |
+          # CI runners are slower and noisier than a dev machine, so the gate is
+          # deliberately loose: it catches order-of-magnitude regressions, not jitter.
+          if grep -q "OVER BUDGET" <(sed -n '/Tier 1/,/headroom/p' bench.txt); then
+            echo "::error::Tier 1 is over the 100ms tick budget — this is a ship gate."
+            exit 1
+          fi
+          echo "Tier 1 within budget."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark
+          path: bench.txt
