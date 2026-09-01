@@ -1,7 +1,9 @@
 import { CIVIC_DEFS } from '../sim/tiles.ts';
-import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST } from '../sim/city.ts';
+import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, LINE_COST, PIPE_COST } from '../sim/city.ts';
 
-export type ToolKind = 'inspect' | 'road' | 'removeroad' | 'zone' | 'civic' | 'bulldoze';
+export type ToolKind =
+  | 'inspect' | 'road' | 'removeroad' | 'zone' | 'civic' | 'bulldoze'
+  | 'powerline' | 'pipe';
 
 export interface Tool {
   id: string;
@@ -37,6 +39,7 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
 const GROUP_OF: Record<string, string> = {
   power: 'Power', wind: 'Power', oil: 'Power', gas: 'Power',
   solar: 'Power', nuclear: 'Power', fusion: 'Power',
+  pump: 'Water', waterworks: 'Water',
   bus: 'Transit', metro: 'Transit', rail: 'Transit',
 };
 
@@ -45,6 +48,9 @@ export const TOOLS: Tool[] = assignKeys([
   { id: 'road', kind: 'road', label: 'Road', key: '', cost: ROAD_COST, colour: '#42464e', group: 'Basics' },
   { id: 'removeroad', kind: 'removeroad', label: 'Remove road', key: '', cost: ROAD_REMOVE_COST, colour: '#5c5f68', group: 'Basics' },
   { id: 'bulldoze', kind: 'bulldoze', label: 'Bulldoze', key: '', cost: BULLDOZE_COST, colour: '#8a3f38', group: 'Basics' },
+
+  { id: 'powerline', kind: 'powerline', label: 'Power line', key: '', cost: LINE_COST, colour: '#e0c65a', group: 'Utilities' },
+  { id: 'pipe', kind: 'pipe', label: 'Water pipe', key: '', cost: PIPE_COST, colour: '#4fa3c8', group: 'Utilities' },
 
   { id: 'zone-r', kind: 'zone', label: 'Residential', key: '', cost: ZONE_COST, zone: 1, colour: '#6cb46f', group: 'Zoning' },
   { id: 'zone-c', kind: 'zone', label: 'Commercial', key: '', cost: ZONE_COST, zone: 2, colour: '#5a9ed0', group: 'Zoning' },
@@ -91,6 +97,8 @@ export function modesFor(kind: ToolKind): { modes: DrawMode[]; preferred: DrawMo
   switch (kind) {
     case 'road':
     case 'removeroad':
+    case 'powerline':
+    case 'pipe':
       return { modes: ['line', 'pencil', 'rectangle'], preferred: 'line' };
     case 'zone':
     case 'bulldoze':

@@ -13,6 +13,7 @@ import type { Snapshot } from './protocol.ts';
 import {
   GROUND, GROUND_ALT, ROAD, UNPOWERED, ZONE_TINT, GRID_LINE, DEVELOPED_OUTLINE,
   WATER_DEEP, WATER_SHALLOW, SHORE, mix, buildingColour, CIVIC_COLOUR,
+  POWER_LINE, PIPE_LINE, POWER_REACH, PIPE_REACH, DEAD_UTILITY,
 } from './citypalette.ts';
 import { SEA_LEVEL } from '../sim/terrain.ts';
 
@@ -33,6 +34,7 @@ export class CityRenderer {
   private readonly gridWidth: number;
   private terrain: { water: Uint8Array; shore: Uint8Array; height: Uint8Array } | null = null;
   private staticLayer: Uint8Array | null = null;
+  private network: 'power' | 'water' | null = null;
 
   constructor(gridWidth: number) {
     this.gridWidth = gridWidth;
@@ -48,6 +50,16 @@ export class CityRenderer {
   /** An overlay whose data comes from terrain rather than from a simulation field. */
   setStaticLayer(data: Uint8Array | null): void {
     this.staticLayer = data;
+  }
+
+  /**
+   * Show a utility network instead of a field overlay.
+   *
+   * These are drawn from the tile planes rather than sampled from a diffused field,
+   * because a pipe is a thing you laid, not a value that spread.
+   */
+  setNetwork(kind: 'power' | 'water' | null): void {
+    this.network = kind;
   }
 
   private ensure(w: number, h: number): void {
@@ -74,7 +86,8 @@ export class CityRenderer {
     this.ensure(r.w, r.h);
     const px = this.pixels!;
     const gw = this.gridWidth;
-    const { zone, density, road, level, civic, powered, layer } = snap;
+    const { zone, density, road, level, civic, powered, watered, powerLine, pipe, layer } = snap;
+    const net = this.network;
 
     for (let y = 0; y < r.h; y++) {
       const srcRow = (r.y0 + y) * gw;
@@ -114,6 +127,22 @@ export class CityRenderer {
         if (terrain && level[i] === 0 && !road[i] && !civic[i]) {
           const lift = (terrain.height[i] - SEA_LEVEL) / (255 - SEA_LEVEL);
           c = mix(c, 0xff000000 | 0x00ffffff, Math.max(0, Math.min(0.16, lift * 0.16)));
+        }
+
+        if (net) {
+          // Network view: the conductor itself, the land it reaches, and — in red —
+          // anything built that the network is failing to serve.
+          const conductor = net === 'power' ? powerLine[i] : pipe[i];
+          const served = net === 'power' ? powered[i] : watered[i];
+          if (conductor) {
+            c = net === 'power' ? POWER_LINE : PIPE_LINE;
+          } else if (level[i] > 0 && !served) {
+            c = DEAD_UTILITY;
+          } else if (served) {
+            c = mix(c, net === 'power' ? POWER_REACH : PIPE_REACH, 0.55);
+          }
+          px[dstRow + x] = c;
+          continue;
         }
 
         const source = this.staticLayer ?? layer;

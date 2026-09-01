@@ -118,6 +118,12 @@ space-drag to pan.
 - **Disasters** — fire, floods, earthquakes and tornadoes, each switchable on its own.
   Flood risk is fixed by the terrain and shown as a data layer, so it is genuinely
   avoidable: build uphill and you will never flood.
+- **Utility networks** — power and water are networks you build, not side effects of
+  paving. Each has its own layer view showing the conductor, the land it reaches, and in
+  red whatever it is failing to serve. Pumps need open water beside them or a workable
+  water table beneath, which the terrain decides.
+- **Draw modes** — free-hand, line, or rectangle. Roads default to lines, zoning to
+  rectangles; nothing is built until the drag ends, so the shape can be adjusted first.
 - **Two views over one simulation** (`Tab`) — the top-down Plan Mode you build in, and an
   orthographic ¾ view with real terrain and rotation. Buildings are untextured massing
   blocks: the camera and proportions get judged before any art is made.
@@ -128,7 +134,7 @@ space-drag to pan.
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 108 tests
+npm test          # 128 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 

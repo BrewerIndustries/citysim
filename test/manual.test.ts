@@ -10,6 +10,7 @@ import { SHORE_AMENITY } from '../src/sim/city.ts';
 import { TOOLS, RESERVED_KEYS } from '../src/app/tools.ts';
 import { DISASTERS } from '../src/sim/disasters.ts';
 import { ACHIEVEMENTS } from '../src/sim/achievements.ts';
+import { UTILITY_REACH } from '../src/sim/utility.ts';
 import { requiredDesirability } from '../src/sim/growth.ts';
 import { LAND_VALUE_TERMS } from '../src/sim/sim.ts';
 import { NEUTRAL_TAX } from '../src/sim/demand.ts';
@@ -142,4 +143,21 @@ test('the manual documents every disaster and the achievement count', () => {
   }
   const a = text(section('achievements'));
   assert.ok(a.includes(String(ACHIEVEMENTS.length)), 'should quote the real achievement count');
+});
+
+test('the manual explains both utility networks', () => {
+  for (const id of ['power', 'water']) {
+    const s = text(section(id));
+    assert.match(s, new RegExp(`${UTILITY_REACH} tiles`), `${id} section should quote the real reach`);
+  }
+  const w = text(section('water'));
+  assert.match(w, /water table/i);
+  for (const d of CIVIC_DEFS.filter((x) => x.water)) {
+    assert.ok(w.includes(d.label), `water section omits ${d.label}`);
+  }
+  // Getting started must teach the new build order, not the old one where roads
+  // carried power.
+  const start = text(section('start'));
+  assert.match(start, /power line/i);
+  assert.match(start, /water pipe|pump/i);
 });

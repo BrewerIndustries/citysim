@@ -22,6 +22,7 @@ export const REASON = {
   AT_CAPACITY: 5,
   ABANDONING: 6,
   UNZONED: 7,
+  NO_WATER: 8,
 } as const;
 
 export const REASON_TEXT: Record<number, string> = {
@@ -33,6 +34,7 @@ export const REASON_TEXT: Record<number, string> = {
   5: 'built out for this density',
   6: 'in decline',
   7: 'not zoned',
+  8: 'no water',
 };
 
 /**
@@ -107,7 +109,7 @@ export function stepGrowth(
   grid: Grid, tiles: Tiles, fields: Fields, demand: Demand, tick: number, reason: Uint8Array,
   changes: ChangeLog,
 ): GrowthStats {
-  const { zone, density, level, roadDist, powered, distress, civic } = tiles;
+  const { zone, density, level, roadDist, powered, watered, distress, civic } = tiles;
   const dR = fields.get('desirabilityR');
   const dC = fields.get('desirabilityC');
   const dI = fields.get('desirabilityI');
@@ -145,10 +147,11 @@ export function stepGrowth(
     const wants = z === ZONE_RES ? demand.r : z === ZONE_COM ? demand.c : demand.i;
     const hasRoad = roadDist[i] <= ROAD_REACH;
     const hasPower = powered[i] === 1;
+    const hasWater = watered[i] === 1;
 
     // --- decline ---------------------------------------------------------------
-    if (lvl > 0 && (!hasRoad || !hasPower || des < DECLINE_BELOW)) {
-      const d = distress[i] + (!hasRoad || !hasPower ? 3 : 1);
+    if (lvl > 0 && (!hasRoad || !hasPower || !hasWater || des < DECLINE_BELOW)) {
+      const d = distress[i] + (!hasRoad || !hasPower || !hasWater ? 3 : 1);
       if (d >= DISTRESS_LIMIT) {
         level[i] = lvl - 1;
         distress[i] = 0;
@@ -157,7 +160,10 @@ export function stepGrowth(
       } else {
         distress[i] = d;
       }
-      reason[i] = !hasRoad ? REASON.NO_ROAD : !hasPower ? REASON.NO_POWER : REASON.ABANDONING;
+      reason[i] = !hasRoad ? REASON.NO_ROAD
+        : !hasPower ? REASON.NO_POWER
+        : !hasWater ? REASON.NO_WATER
+        : REASON.ABANDONING;
       continue;
     }
     if (distress[i] > 0) distress[i]--;
@@ -165,6 +171,7 @@ export function stepGrowth(
     // --- growth ----------------------------------------------------------------
     if (!hasRoad) { reason[i] = REASON.NO_ROAD; continue; }
     if (!hasPower) { reason[i] = REASON.NO_POWER; continue; }
+    if (!hasWater) { reason[i] = REASON.NO_WATER; continue; }
     if (lvl >= max) { reason[i] = REASON.AT_CAPACITY; continue; }
     if (wants <= 0.02) { reason[i] = REASON.NO_DEMAND; continue; }
     if (des < requiredDesirability(lvl)) { reason[i] = REASON.LOW_DESIRABILITY; continue; }

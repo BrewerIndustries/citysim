@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { wireUtilities } from './helpers.ts';
 import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { City, MESSAGE_TTL, TICKS_PER_MONTH } from '../src/sim/city.ts';
 import { SERIES, HISTORY_LIMIT } from '../src/sim/history-series.ts';
@@ -24,6 +25,7 @@ function buildTestCity(size = 128): City {
   for (let y = 41; y < 44; y++) for (let x = 65; x < 100; x++) c.paintZone(g.index(x, y), ZONE_IND, 0);
   c.placeCivic(g.index(30, 34), 1); // police
   c.placeCivic(g.index(45, 34), 4); // park
+  wireUtilities(c);
   return c;
 }
 
@@ -57,6 +59,7 @@ test('no road means no development, and the reason says so', () => {
   const g = c.grid;
   c.placeCivic(g.index(10, 10), 5);
   for (let y = 60; y < 64; y++) for (let x = 60; x < 64; x++) c.paintZone(g.index(x, y), ZONE_RES, 0);
+  wireUtilities(c);
   for (let t = 0; t < 60; t++) c.step();
   assert.equal(c.stats.population, 0);
   assert.equal(c.reason[g.index(62, 62)], REASON.NO_ROAD);
@@ -70,6 +73,7 @@ test('power reaches as far as road access does', () => {
   for (let x = 8; x < 100; x++) c.buildRoad(g.index(x, 40));
   for (let y = 30; y < 40; y++) c.buildRoad(g.index(12, y));
   c.placeCivic(g.index(10, 26), 5);
+  wireUtilities(c);
   c.step();
   for (let d = 1; d <= 3; d++) {
     assert.equal(c.tiles.powered[g.index(50, 40 + d)], 1, `cell ${d} from the road should be powered`);

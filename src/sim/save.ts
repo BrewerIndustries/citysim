@@ -17,12 +17,14 @@ import { ACHIEVEMENTS } from './achievements.ts';
 
 const MAGIC = 0x4354534d; // "CTSM"
 const END_MAGIC = 0x454e4421; // "END!"
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 /** Planes written to disk, in order. Derived planes are deliberately absent. */
 const PLANES: Array<keyof Tiles & string> = [
   'zone', 'density', 'road', 'level', 'civic', 'civicAnchor', 'distress',
 ];
+/** Added in v6. Written after the original planes so v5 files still read cleanly. */
+const PLANES_V6: Array<keyof Tiles & string> = ['powerLine', 'pipe'];
 
 /** Ticks of field simulation run after loading, to regenerate the derived state. */
 export const SETTLE_TICKS = 14;
@@ -146,11 +148,25 @@ export function serialize(city: City): Uint8Array {
   w.u32(city.peakPopulation);
   w.u32(bitmaskOf(city.everBuilt));
   for (const name of PLANES) writePlane(w, city.tiles[name] as Uint8Array);
+  for (const name of PLANES_V6) writePlane(w, city.tiles[name] as Uint8Array);
   // Sentinel. If the reader and writer ever fall out of step, this fails with "reader
   // and writer disagree" instead of a misleading complaint about corrupt tile planes —
   // which is exactly how the achievements block was first noticed to be misplaced.
   w.u32(END_MAGIC);
   return w.bytes();
+}
+
+/**
+ * Before v6 the roads themselves carried power. Lay a line under every road so a city
+ * built under the old rule keeps its lights on.
+ *
+ * Water is deliberately NOT back-filled. It is a new requirement, and the Why Panel will
+ * say "no water" — something the player can see and fix in a minute — rather than
+ * creating a silent second class of city that never needed it.
+ */
+export function backfillLegacyPower(tiles: Tiles): void {
+  const { road, powerLine } = tiles;
+  for (let i = 0; i < road.length; i++) if (road[i]) powerLine[i] = 1;
 }
 
 export interface LoadResult {
@@ -206,6 +222,11 @@ export function deserialize(bytes: Uint8Array): LoadResult {
     city.everBuilt = setFromBitmask(r.u32());
   }
   for (const name of PLANES) readPlane(r, city.tiles[name] as Uint8Array);
+  if (version >= 6) {
+    for (const name of PLANES_V6) readPlane(r, city.tiles[name] as Uint8Array);
+  } else {
+    backfillLegacyPower(city.tiles);
+  }
   if (version >= 5 && r.u32() !== END_MAGIC) {
     throw new Error('corrupt save: reader and writer disagree about the layout');
   }
@@ -214,6 +235,7 @@ export function deserialize(bytes: Uint8Array): LoadResult {
   // player doesn't watch their city flicker through a few ticks of wrong values.
   city.markRoadsDirty();
   city.markCivicsDirty();
+  city.markUtilitiesDirty();
   city.settleFields(SETTLE_TICKS);
   // v1/v2 saves predate progression: infer it from what's standing so an old city
   // doesn't lose access to buildings it already had.

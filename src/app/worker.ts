@@ -104,9 +104,13 @@ function postReady(c: City): void {
   const shore = new Uint8Array(c.terrain.shore);
   const terrainHeight = new Uint8Array(c.terrain.height);
   const floodRisk = new Uint8Array(c.terrain.floodRisk);
+  const waterTable = new Uint8Array(c.terrain.waterTable);
   self.postMessage(
-    { type: 'ready', width: c.grid.width, height: c.grid.height, water, shore, terrainHeight, floodRisk },
-    [water.buffer, shore.buffer, terrainHeight.buffer, floodRisk.buffer],
+    {
+      type: 'ready', width: c.grid.width, height: c.grid.height,
+      water, shore, terrainHeight, floodRisk, waterTable,
+    },
+    [water.buffer, shore.buffer, terrainHeight.buffer, floodRisk.buffer, waterTable.buffer],
   );
 }
 
@@ -118,6 +122,7 @@ function apply(c: City, a: import('./protocol.ts').Action): void {
   switch (a.kind) {
     case 'road': for (const i of a.cells) c.buildRoad(i); break;
     case 'removeroad': for (const i of a.cells) c.removeRoad(i); break;
+    case 'utility': for (const i of a.cells) c.buildUtility(i, a.utility); break;
     case 'zone': for (const i of a.cells) c.paintZone(i, a.zone, a.density); break;
     case 'bulldoze': for (const i of a.cells) c.bulldoze(i); break;
     case 'civic': {
@@ -153,7 +158,7 @@ function loop(): void {
   const snap: Snapshot = {
     type: 'frame',
     tick: c.tick, month: c.month, year: c.year, funds: c.funds,
-    demand: c.demand, stats: c.stats, power: c.power, ledger: c.ledger, tax: c.tax,
+    demand: c.demand, stats: c.stats, power: c.power, water: c.water, ledger: c.ledger, tax: c.tax,
     messages: c.activeMessages(3),
     simMs,
     disasters: { ...c.disasters },
@@ -173,6 +178,9 @@ function loop(): void {
     zone: new Uint8Array(t.zone),
     density: new Uint8Array(t.density),
     road: new Uint8Array(t.road),
+    powerLine: new Uint8Array(t.powerLine),
+    pipe: new Uint8Array(t.pipe),
+    watered: new Uint8Array(t.watered),
     level: new Uint8Array(t.level),
     civic: new Uint8Array(t.civic),
     powered: new Uint8Array(t.powered),
@@ -182,6 +190,7 @@ function loop(): void {
   const transfer: Transferable[] = [
     snap.zone.buffer, snap.density.buffer, snap.road.buffer,
     snap.level.buffer, snap.civic.buffer, snap.powered.buffer,
+    snap.powerLine.buffer, snap.pipe.buffer, snap.watered.buffer,
   ];
   if (layer) transfer.push(layer.buffer);
   self.postMessage(snap, transfer);

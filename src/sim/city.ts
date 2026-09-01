@@ -8,14 +8,14 @@ import { Fields } from './fields.ts';
 import { Simulation } from './sim.ts';
 import { Tiles, CIVIC_BY_ID, CIVIC_DEFS, ZONE_RES, ZONE_COM, ZONE_IND, MAX_LEVEL } from './tiles.ts';
 import { recomputeRoadDistance, ROAD_REACH } from './roads.ts';
-import { PowerGrid, type PowerReport } from './power.ts';
+import { UtilityGrid, POWER, WATER, type UtilityReport } from './utility.ts';
 import { stepGrowth, tallyCity, requiredDesirability, type GrowthStats } from './growth.ts';
 import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
 import { updateFireRisk, stepFires } from './fire.ts';
 import { stepDisasters, DISASTERS } from './disasters.ts';
 import { ACHIEVEMENTS, snapshotFor } from './achievements.ts';
 import { History } from './history.ts';
-import { Terrain } from './terrain.ts';
+import { Terrain, WATER_TABLE_MIN } from './terrain.ts';
 import { lockReason, unlockedIds, type UnlockState } from './unlocks.ts';
 import { ChangeLog } from './dirty.ts';
 import { emptySeries, pushSample, type SeriesData } from './history-series.ts';
@@ -27,6 +27,11 @@ export const ZONE_COST = 8;
 export const BULLDOZE_COST = 4;
 /** Lifting a road is cheaper than levelling everything on the tile. */
 export const ROAD_REMOVE_COST = 2;
+/** Utilities are cheap to lay and cheap to maintain — the cost is the planning. */
+export const LINE_COST = 6;
+export const PIPE_COST = 6;
+export const LINE_UPKEEP = 0.15;
+export const PIPE_UPKEEP = 0.15;
 /** Ticks a ticker message stays on screen before it expires. */
 export const MESSAGE_TTL = 220;
 /** Amenity value of a waterfront tile. Below a park's, but it runs the whole coast. */
@@ -66,7 +71,8 @@ export class City {
     population: 0, jobsC: 0, jobsI: 0, developedCells: 0,
     zonedCells: 0, abandonedThisTick: 0, grewThisTick: 0,
   };
-  power: PowerReport = { supply: 0, demand: 0, litCells: 0, unservedCells: 0, brownout: false };
+  power: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false };
+  water: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false };
   ledger: Ledger = { taxR: 0, taxC: 0, taxI: 0, upkeepCivic: 0, upkeepRoads: 0, net: 0 };
   bankrupt = false;
   /** Sticky: needed by the 'back from the brink' achievement. */
@@ -102,10 +108,13 @@ export class City {
   /** Fires draw from their own stream so toggling them can't shift the rest of the sim. */
   private readonly rngFire: Rng;
   private readonly queue: Int32Array;
-  private readonly powerGrid: PowerGrid;
+  private readonly powerGrid: UtilityGrid;
+  private readonly waterGrid: UtilityGrid;
   /** Maintained as things are built, so the monthly ledger needs no full-grid scan. */
   private sourceRegions: import('./dirty.ts').DirtyRegion[] | undefined;
   private roadCells = 0;
+  private lineCells = 0;
+  private pipeCells = 0;
   private civicUpkeep = 0;
   private tickCount = 0;
 
@@ -120,7 +129,8 @@ export class City {
     this.terrain = new Terrain(this.grid, mapSeed);
     this.refreshUnlocks();
     this.queue = new Int32Array(this.grid.size);
-    this.powerGrid = new PowerGrid(this.grid.size);
+    this.powerGrid = new UtilityGrid(this.grid.size, POWER);
+    this.waterGrid = new UtilityGrid(this.grid.size, WATER);
     this.changes = new ChangeLog(Math.min(this.grid.size, 1 << 20));
   }
 
@@ -135,14 +145,20 @@ export class City {
    */
   /** Rebuild the incremental ledger counters from scratch. */
   recountUpkeep(): void {
-    const { road, civic, civicAnchor } = this.tiles;
+    const { road, powerLine, pipe, civic, civicAnchor } = this.tiles;
     let roads = 0;
+    let lines = 0;
+    let pipes = 0;
     let upkeep = 0;
     for (let i = 0; i < road.length; i++) {
       if (road[i]) roads++;
+      if (powerLine[i]) lines++;
+      if (pipe[i]) pipes++;
       if (civicAnchor[i]) upkeep += CIVIC_BY_ID.get(civic[i])?.upkeep ?? 0;
     }
     this.roadCells = roads;
+    this.lineCells = lines;
+    this.pipeCells = pipes;
     this.civicUpkeep = upkeep;
   }
 
@@ -162,8 +178,10 @@ export class City {
     this.stats = tallyCity(this.tiles);
   }
 
-  markRoadsDirty(): void { this.roadsDirty = true; this.powerGrid.markDirty(); }
-  markCivicsDirty(): void { this.civicsDirty = true; this.powerGrid.markDirty(); }
+  markRoadsDirty(): void { this.roadsDirty = true; }
+  /** Anything that changes what carries a utility, or where it comes from. */
+  markUtilitiesDirty(): void { this.powerGrid.markDirty(); this.waterGrid.markDirty(); }
+  markCivicsDirty(): void { this.civicsDirty = true; this.markUtilitiesDirty(); }
 
   /** Set to accumulate per-phase timings into `profile`. Off by default. */
   profiling = false;
@@ -189,7 +207,10 @@ export class City {
 
     this.phase('sources', () => this.applySourceChanges());
     this.phase('diffusion', () => this.sim.step());
-    this.phase('power', () => { this.power = this.powerGrid.step(this.grid, this.tiles); });
+    this.phase('power', () => {
+      this.power = this.powerGrid.step(this.grid, this.tiles);
+      this.water = this.waterGrid.step(this.grid, this.tiles);
+    });
     this.changes.reset();
     this.phase('growth', () => {
       this.stats = stepGrowth(
@@ -245,7 +266,8 @@ export class City {
     // Counted incrementally as things are built and demolished. Two full-grid scans a
     // month cost 35ms a tick at Tier 3 for numbers that change by one at a time.
     l.upkeepCivic = this.civicUpkeep;
-    l.upkeepRoads = this.roadCells * ROAD_UPKEEP;
+    l.upkeepRoads = this.roadCells * ROAD_UPKEEP
+      + this.lineCells * LINE_UPKEEP + this.pipeCells * PIPE_UPKEEP;
     l.net = l.taxR + l.taxC + l.taxI - l.upkeepCivic - l.upkeepRoads;
 
     this.funds += l.net;
@@ -280,8 +302,11 @@ export class City {
       this.bankrupt = false;
       this.pushMessage('The books are balanced again.');
     }
-    if (this.power.brownout) {
+    if (this.power.shortfall) {
       this.pushMessage(`Brownout: demand ${Math.round(this.power.demand)} MW exceeds supply ${this.power.supply} MW.`);
+    }
+    if (this.water.shortfall) {
+      this.pushMessage(`Water shortage: demand ${Math.round(this.water.demand)} exceeds supply ${this.water.supply}.`);
     }
   }
 
@@ -548,6 +573,37 @@ export class City {
     return true;
   }
 
+  /**
+   * Lay a power line or a water pipe. Both may share a tile with a road — utilities run
+   * under the street, which is where they belong and how a real city is laid out.
+   */
+  buildUtility(i: number, kind: 'powerLine' | 'pipe'): boolean {
+    const t = this.tiles;
+    const plane = kind === 'powerLine' ? t.powerLine : t.pipe;
+    if (plane[i] || this.terrain.water[i]) return false;
+    const cost = kind === 'powerLine' ? LINE_COST : PIPE_COST;
+    if (!this.canAfford(cost)) return false;
+    this.history.touch(t, i);
+    this.spend(cost);
+    plane[i] = 1;
+    if (kind === 'powerLine') this.lineCells++; else this.pipeCells++;
+    this.markUtilitiesDirty();
+    return true;
+  }
+
+  removeUtility(i: number, kind: 'powerLine' | 'pipe'): boolean {
+    const t = this.tiles;
+    const plane = kind === 'powerLine' ? t.powerLine : t.pipe;
+    if (!plane[i]) return false;
+    if (!this.canAfford(ROAD_REMOVE_COST)) return false;
+    this.history.touch(t, i);
+    this.spend(ROAD_REMOVE_COST);
+    plane[i] = 0;
+    if (kind === 'powerLine') this.lineCells--; else this.pipeCells--;
+    this.markUtilitiesDirty();
+    return true;
+  }
+
   paintZone(i: number, zone: number, density: number): boolean {
     const t = this.tiles;
     if (t.road[i] || t.civic[i] || this.terrain.water[i]) return false;
@@ -582,6 +638,12 @@ export class City {
           return { ok: false, error: 'the site is occupied' };
         }
       }
+    }
+    if (def.needsWaterSource && !this.hasWaterSource(ax, ay, def.size)) {
+      return {
+        ok: false,
+        error: 'it needs open water beside it, or ground with a workable water table',
+      };
     }
     if (!this.canAfford(def.cost)) return { ok: false, error: `costs $${def.cost}` };
     this.spend(def.cost);
@@ -624,6 +686,22 @@ export class City {
     return true;
   }
 
+  /** A pump works beside open water, or on ground with enough underground water. */
+  private hasWaterSource(ax: number, ay: number, size: number): boolean {
+    const { width, height } = this.grid;
+    const { water, waterTable } = this.terrain;
+    for (let y = ay - 1; y <= ay + size; y++) {
+      for (let x = ax - 1; x <= ax + size; x++) {
+        if (x < 0 || y < 0 || x >= width || y >= height) continue;
+        const i = this.grid.index(x, y);
+        if (water[i]) return true;
+        const inside = x >= ax && x < ax + size && y >= ay && y < ay + size;
+        if (inside && waterTable[i] >= WATER_TABLE_MIN) return true;
+      }
+    }
+    return false;
+  }
+
   bulldoze(i: number): boolean {
     const t = this.tiles;
     const hadCivic = t.civic[i];
@@ -654,7 +732,11 @@ export class City {
       this.markCivicsDirty();
     }
     if (t.road[i]) { this.roadCells--; this.markRoadsDirty(); }
+    if (t.powerLine[i]) { this.lineCells--; this.markUtilitiesDirty(); }
+    if (t.pipe[i]) { this.pipeCells--; this.markUtilitiesDirty(); }
     t.road[i] = 0;
+    t.powerLine[i] = 0;
+    t.pipe[i] = 0;
     t.zone[i] = 0;
     t.density[i] = 0;
     t.level[i] = 0;

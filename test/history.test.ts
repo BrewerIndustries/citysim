@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { wireUtilities } from './helpers.ts';
 import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { City } from '../src/sim/city.ts';
 import { ZONE_RES, ZONE_COM, CIVIC_DEFS } from '../src/sim/tiles.ts';
@@ -140,6 +141,8 @@ test('undo works on a running city and the simulation keeps up', () => {
   for (let y = 30; y < 40; y++) c.buildRoad(g.index(12, y));
   c.placeCivic(g.index(10, 26), 5);
   for (let y = 37; y < 40; y++) for (let x = 20; x < 55; x++) c.paintZone(g.index(x, y), ZONE_RES, 0);
+  // Inside the stroke, so undoing the build takes the utilities with it.
+  wireUtilities(c);
   c.endStroke();
   for (let t = 0; t < 150; t++) c.step();
   assert.ok(c.stats.population > 0);

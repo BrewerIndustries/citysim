@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { wireUtilities } from './helpers.ts';
 import { City, TICKS_PER_MONTH } from '../src/sim/city.ts';
 import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { ACHIEVEMENTS } from '../src/sim/achievements.ts';
@@ -34,6 +35,7 @@ test('population milestones are earned by growing', () => {
   // it up to the top of the map and butt the plant against it.
   for (let y = 2; y < 8; y++) c.buildRoad(g.index(99, y));
   c.placeCivic(g.index(95, 2), CIVIC_BY_KEY.get('power')!.id);
+  wireUtilities(c);
   for (let y = 9; y < 199; y++) for (let x = 9; x < 199; x++) c.paintZone(g.index(x, y), ZONE_RES, 2);
   months(c, 60);
   assert.ok(c.stats.population >= 1000, `only reached ${c.stats.population}`);

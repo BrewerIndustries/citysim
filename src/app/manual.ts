@@ -11,7 +11,7 @@ import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, TICKS_PER_MONTH,
 import { CIVIC_DEFS, MAX_LEVEL, ZONE_LABEL } from '../sim/tiles.ts';
 import { requirementText } from '../sim/unlocks.ts';
 import { requiredDesirability, REASON_TEXT, DECLINE_BELOW, DISTRESS_LIMIT, residentsAt, jobsAt } from '../sim/growth.ts';
-import { powerDraw } from '../sim/power.ts';
+import { POWER, WATER, UTILITY_REACH } from '../sim/utility.ts';
 import { NEUTRAL_TAX } from '../sim/demand.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { CELL_METRES } from '../sim/grid.ts';
@@ -91,13 +91,15 @@ export function buildManual(): ManualSection[] {
       id: 'start',
       title: 'Getting started',
       html: `
-        <p>Your city needs three things before anything will grow: <b>power</b>, <b>roads</b>,
-        and <b>zoning</b>. In that order.</p>
+        <p>A plot needs four things before anything will grow on it: a <b>road</b>, a
+        <b>power line</b> and a <b>water pipe</b> within three tiles, and <b>zoning</b>.</p>
         <ol>
-          <li><b>Place a coal power plant.</b> Nothing develops without electricity.</li>
-          <li><b>Draw roads</b> out from the plant. Roads carry power as well as traffic, so
-          the plant must be connected to the street network.</li>
-          <li><b>Zone</b> land beside the roads — residential first, then commercial and
+          <li><b>Place a coal power plant</b>, and a <b>water pump</b> beside water or on
+          ground with a water table beneath it.</li>
+          <li><b>Draw roads</b> where you want the city to be.</li>
+          <li><b>Lay a power line and a water pipe</b> along those roads, back to the plant
+          and the pump. All three share a tile, so drag them down the same streets.</li>
+          <li><b>Zone</b> beside the roads — residential first, then commercial and
           industrial for jobs.</li>
           <li><b>Watch the RCI meter</b> in the top bar. It shows what the city is short of.</li>
           <li><b>Add services</b> once you have residents to pay for them.</li>
@@ -114,6 +116,9 @@ export function buildManual(): ManualSection[] {
         <p>One tile is ${CELL_METRES}m, so a street serves roughly
         ${ROAD_REACH * CELL_METRES}m of depth either side.</p>
         ${roadReachDiagram()}
+        <p>Power lines and water pipes follow the <b>same ${ROAD_REACH}-tile rule</b>, and
+        can share a tile with the road, so a street with a line and a pipe under it serves
+        exactly the land the road does. Lay all three together.</p>
         <p><b>Space parallel streets ${IDEAL_ROAD_SPACING} tiles apart.</b> Each street reaches
         ${ROAD_REACH} tiles to either side, so at ${IDEAL_ROAD_SPACING} the coverage from two
         streets just meets with nothing wasted and nothing stranded. Go one wider and a dead
@@ -186,24 +191,51 @@ export function buildManual(): ManualSection[] {
       id: 'power',
       title: 'Power',
       html: `
-        <p>Buildings draw <b>${powerDraw(1)} MW per level</b>, so a level-${MAX_LEVEL[2]} tower
-        draws ${powerDraw(MAX_LEVEL[2])} MW while an empty lot draws nothing.</p>
+        <p>Power is a <b>network you build</b>, not something roads provide. A plant
+        injects supply into any power line touching it; lines carry it; and everything
+        within <b>${UTILITY_REACH} tiles</b> of a live line is powered — the same reach
+        that governs road access, so a plot a road can serve, a line can serve.</p>
+        <p><b>Lines can share a tile with a road.</b> Laying them along your streets is
+        both the tidiest and the cheapest way to cover a city, and it is what the
+        <b>Power network</b> layer is for: it shows the lines, the land they reach, and in
+        red anything built that the network is failing to serve.</p>
+        <p>Buildings draw <b>${POWER.draw(1)} MW per level</b>, so a level-${MAX_LEVEL[2]}
+        tower draws ${POWER.draw(MAX_LEVEL[2])} MW while an empty lot draws nothing.</p>
         <p>You start with coal. Six more plants unlock as the city grows — see
-        <b>Unlocks</b> for the full ladder and what each one costs in money, land and smoke.</p>
+        <b>Unlocks</b> for the full ladder and what each costs in money, land and smoke.</p>
         ${table(['Plant', 'Supplies', 'Pollution', 'Available'],
           CIVIC_DEFS.filter((d) => d.supply).map((d) => [
             d.label, `${d.supply!.toLocaleString()} MW`,
             d.pollution ? String(d.pollution) : 'none',
             requirementText(d),
           ]))}
-        <p>Power spreads from the plant along <b>connected roads</b>, then out
-        ${ROAD_REACH} tiles either side — the same reach as road access, so any plot a road
-        can serve, a road can also power.</p>
-        <p>If demand exceeds supply you get a <b>brownout</b>: tiles furthest from a plant go
-        dark first, and unpowered buildings start to decline. The top bar shows demand against
-        supply at all times.</p>
-        <p class="tip">A plant does not need to sit in the middle of the city. Put it downwind
-        of your housing — it pollutes — and run a road to it.</p>`,
+        <p>If demand exceeds supply you get a <b>brownout</b>: cells furthest along the
+        network go dark first, and unpowered buildings decline. Cut a line and everything
+        beyond it is stranded.</p>`,
+    },
+    {
+      id: 'water',
+      title: 'Water',
+      html: `
+        <p>Water works exactly like power, with its own network and its own layer. Pumps
+        supply it, <b>pipes</b> carry it, and anything within <b>${UTILITY_REACH} tiles</b>
+        of a pipe is served. Pipes can share a tile with a road and with a power line —
+        all three run under the same street.</p>
+        <p>Buildings draw <b>${WATER.draw(1)} per level</b>. Nothing develops without
+        water, and a building cut off from it declines just as it would without power.</p>
+        <h4>Where a pump can go</h4>
+        <p>A pump needs something to draw from: <b>open water beside it</b>, or ground with
+        a workable <b>water table</b> beneath it. Turn on the <b>Water table</b> layer to
+        see where the aquifers are — they favour low ground, and they vary a great deal
+        from map to map. A coastal site always works.</p>
+        ${table(['Building', 'Supplies', 'Cost', 'Upkeep', 'Size'],
+          CIVIC_DEFS.filter((d) => d.water).map((d) => [
+            d.label, d.water!.toLocaleString(), money(d.cost), money(d.upkeep) + ' / mo',
+            `${d.size}×${d.size}`,
+          ]))}
+        <p class="tip">Lay pipe and line along the same streets as you build them. Coming
+        back to retrofit utilities through a finished district is far more work than
+        laying them as you go.</p>`,
     },
     {
       id: 'services',
@@ -470,7 +502,7 @@ function serviceEffect(key: string): string {
     case 'fire': return 'Cuts fire risk nearby by up to 92%. Without it, buildings burn down';
     case 'school': return 'Raises land value strongly; a long-term driver of a wealthier city';
     case 'park': return 'Raises land value nearby — the cheapest way to lift a neighbourhood';
-    case 'power': return 'Supplies electricity to the road network. Pollutes heavily';
+    case 'power': return 'Feeds the power network. Cheap and filthy';
     case 'wind': return 'A little clean power, no emissions at all';
     case 'oil': return 'Twice coal\'s output, and cleaner';
     case 'gas': return 'High output, low emissions, cheap to run';
@@ -481,6 +513,8 @@ function serviceEffect(key: string): string {
     case 'firehq': return 'Fire coverage across a whole district';
     case 'university': return 'A large land-value lift, and the route to nuclear power';
     case 'bigpark': return 'The strongest land-value lift in the game';
+    case 'pump': return 'Feeds the water network. Needs water beside it or beneath it';
+    case 'waterworks': return 'Six times a pump, on the same siting rule';
     case 'rail': return 'Transit access across a whole quarter';
     case 'bus': return 'Transit access nearby — cheap, and a strong lift to land value';
     case 'metro': return 'Transit access over a much wider area than a bus stop';
@@ -510,6 +544,9 @@ function layerHint(field: string): string {
     crime: 'Rises with density, falls sharply under police coverage',
     fireRisk: 'Where a fire is likely to start. Driven by building size and lack of fire cover',
     floodRisk: 'Low ground near water. Fixed by the terrain — check it before you zone',
+    powerNetwork: 'Your power lines, what they reach, and in red what they are failing to serve',
+    waterNetwork: 'Your pipes, what they reach, and in red what they are failing to serve',
+    waterTable: 'Underground water. A pump needs this, or open water beside it',
     policeCover: 'Reach of your police stations',
     fireCover: 'Reach of your fire stations',
     schoolCover: 'Reach of your schools',

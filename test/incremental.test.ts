@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { wireUtilities } from './helpers.ts';
 import { City } from '../src/sim/city.ts';
 import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { FIELD_NAMES } from '../src/sim/fields.ts';
@@ -39,6 +40,7 @@ const spine = (c: City) => {
   for (let x = 8; x < 120; x++) c.buildRoad(g.index(x, 40));
   for (let y = 12; y < 40; y++) c.buildRoad(g.index(100, y));
   c.placeCivic(g.index(98, 8), CIVIC_BY_KEY.get('power')!.id);
+  wireUtilities(c);
 };
 
 test('incremental fields match a full recompute: growth from nothing', () => {

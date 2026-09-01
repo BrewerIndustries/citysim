@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { wireUtilities } from './helpers.ts';
 import { City } from '../src/sim/city.ts';
 import { Grid } from '../src/sim/grid.ts';
 import { Terrain, FLAT_MAP, SEA_LEVEL, FLOOD_REACH } from '../src/sim/terrain.ts';
@@ -17,6 +18,7 @@ function wateryCity(seed = 7): City {
   for (let y = 8; y < 120; y += 7) for (let x = 8; x < 120; x++) c.buildRoad(g.index(x, y));
   for (let x = 8; x < 120; x += 7) for (let y = 8; y < 120; y++) c.buildRoad(g.index(x, y));
   c.placeCivic(g.index(10, 4), CIVIC_BY_KEY.get('power')!.id);
+  wireUtilities(c);
   for (let y = 9; y < 118; y++) {
     for (let x = 9; x < 118; x++) {
       c.paintZone(g.index(x, y), ZONE_RES, 2);

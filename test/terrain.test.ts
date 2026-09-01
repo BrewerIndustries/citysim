@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { wireUtilities } from './helpers.ts';
 import { Grid } from '../src/sim/grid.ts';
 import { Terrain, SEA_LEVEL } from '../src/sim/terrain.ts';
 import { City, SHORE_AMENITY } from '../src/sim/city.ts';

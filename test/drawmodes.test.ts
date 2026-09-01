@@ -56,3 +56,17 @@ test('every offered mode is a real one', () => {
     if (modes.length) assert.ok(modes.includes(preferred), `${t.label} prefers a mode it doesn't offer`);
   }
 });
+
+test('the tool rail never splits a group in two', () => {
+  // The rail starts a new section every time the group name changes, so a tool listed
+  // out of order splits its neighbour — Utilities once appeared between two halves of
+  // Basics.
+  const seen = new Set<string>();
+  let current = '';
+  for (const t of TOOLS) {
+    if (t.group === current) continue;
+    assert.ok(!seen.has(t.group), `group "${t.group}" appears twice in the rail`);
+    seen.add(t.group);
+    current = t.group;
+  }
+});

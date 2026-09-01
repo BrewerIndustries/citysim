@@ -23,7 +23,14 @@ export const RAMPS: Record<string, Ramp> = {
  * (see src/sim/fields.ts FIELD_MAX), so overlays share one scale. Only the raw
  * source layers carry their own units and need a custom display maximum.
  */
-export const LAYERS: ReadonlyArray<{ field: string; label: string; ramp: keyof typeof RAMPS; max: number }> = [
+export const LAYERS: ReadonlyArray<{
+  field: string; label: string; ramp: keyof typeof RAMPS; max: number;
+  /** Networks are drawn from tile planes by the renderer, not sampled from a field. */
+  network?: 'power' | 'water';
+}> = [
+  { field: 'powerNetwork', label: 'Power network', ramp: 'nuisance', max: 255, network: 'power' },
+  { field: 'waterNetwork', label: 'Water network', ramp: 'coverage', max: 255, network: 'water' },
+  { field: 'waterTable', label: 'Water table', ramp: 'coverage', max: 255 },
   { field: 'landValue', label: 'Land value', ramp: 'value', max: 120 },
   { field: 'desirabilityR', label: 'Desirability — residential', ramp: 'value', max: 120 },
   { field: 'desirabilityC', label: 'Desirability — commercial', ramp: 'value', max: 120 },

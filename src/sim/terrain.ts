@@ -13,6 +13,9 @@ import type { Grid } from './grid.ts';
 
 /** Height below which a cell is water. */
 export const SEA_LEVEL = 78;
+/** A pump needs ground at least this productive, or open water beside it. */
+export const WATER_TABLE_MIN = 110;
+
 /** Cells further than this from water cannot flood. */
 export const FLOOD_REACH = 12;
 /** Height above sea level at which flood risk reaches zero. */
@@ -35,6 +38,12 @@ export class Terrain {
    * the risk is visible as a data layer before you build anything on it.
    */
   readonly floodRisk: Uint8Array;
+  /**
+   * Underground water, 0–255. A pump can be built on ground above about
+   * {@link WATER_TABLE_MIN}, which is what gives a city built away from a river
+   * somewhere to draw from. Static for the life of a map.
+   */
+  readonly waterTable: Uint8Array;
   waterCells = 0;
 
   constructor(grid: Grid, seed: number) {
@@ -43,7 +52,10 @@ export class Terrain {
     this.water = new Uint8Array(n);
     this.shore = new Uint8Array(n);
     this.floodRisk = new Uint8Array(n);
+    this.waterTable = new Uint8Array(n);
     if (seed === FLAT_MAP) {
+      // A flat map still needs somewhere to draw water from, or nothing can be built.
+      this.waterTable.fill(200);
       // A featureless plain. Used by tests that build at fixed coordinates, and
       // available in-game for anyone who'd rather plan without a coastline.
       this.height.fill(FLAT_HEIGHT);
@@ -100,6 +112,29 @@ export class Terrain {
     }
 
     this.computeFloodRisk(grid);
+    this.computeWaterTable(grid, seed);
+  }
+
+  /**
+   * Aquifers: broad, smooth patches of underground water, biased toward low ground
+   * because that is where water collects. Deliberately coarse — the player should be
+   * looking for a REGION to put a pump in, not hunting a single lucky tile.
+   */
+  private computeWaterTable(grid: Grid, seed: number): void {
+    const { width, height: h } = grid;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        if (this.water[i]) { this.waterTable[i] = 255; continue; }
+        const n =
+          0.68 * valueNoise(x * 0.011, y * 0.011, seed + 4211) +
+          0.32 * valueNoise(x * 0.027, y * 0.027, seed + 9137);
+        // Low ground holds more water than a hilltop.
+        const rise = Math.max(0, this.height[i] - SEA_LEVEL) / (255 - SEA_LEVEL);
+        const v = n * (1 - 0.55 * rise);
+        this.waterTable[i] = Math.round(Math.max(0, Math.min(1, (v - 0.22) / 0.5)) * 255);
+      }
+    }
   }
 
   /**

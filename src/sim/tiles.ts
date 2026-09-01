@@ -54,6 +54,10 @@ export interface CivicDef {
   source?: { field: string; value: number };
   /** Megawatts supplied (power plant only). */
   supply?: number;
+  /** Cubic metres of water supplied (pump only). */
+  water?: number;
+  /** Must sit beside open water, or on ground with a workable water table. */
+  needsWaterSource?: boolean;
   /** Emission written per tile of footprint. This is what makes clean power matter. */
   pollution?: number;
   /** Absent means available from the start. */
@@ -123,6 +127,15 @@ export const CIVIC_DEFS: CivicDef[] = [
     unlock: { population: 50000, requires: ['nuclear', 'solar'] },
     note: 'The end of the energy problem' },
 
+  // --- water -----------------------------------------------------------------
+  { id: 19, key: 'pump', label: 'Water pump', cost: 800, upkeep: 90, size: 2,
+    water: 2400, needsWaterSource: true, colour: '#4fa3c8',
+    note: 'Must sit beside water, or on a good water table' },
+  { id: 20, key: 'waterworks', label: 'Water works', cost: 4500, upkeep: 420, size: 4,
+    water: 14000, needsWaterSource: true, colour: '#3a7ea0',
+    unlock: { population: 7000, requires: ['pump'] },
+    note: 'Six times a pump, on the same siting rule' },
+
   // --- transit ---------------------------------------------------------------
   { id: 6, key: 'bus', label: 'Bus stop', cost: 120, upkeep: 18, size: 1,
     source: { field: 'transitSrc', value: 65 }, colour: '#b06fc8' },
@@ -148,6 +161,10 @@ export class Tiles {
   readonly density: Uint8Array;
   /** 1 if a road occupies this cell. */
   readonly road: Uint8Array;
+  /** 1 if a power line runs here. Lines may share a tile with a road. */
+  readonly powerLine: Uint8Array;
+  /** 1 if a water pipe runs here. Pipes may share a tile with a road or a line. */
+  readonly pipe: Uint8Array;
   /** Development level of the grown building, 0 = empty lot. */
   readonly level: Uint8Array;
   /** Civic building id occupying this cell (0 = none). */
@@ -156,6 +173,8 @@ export class Tiles {
   readonly civicAnchor: Uint8Array;
   /** 1 if powered this tick. */
   readonly powered: Uint8Array;
+  /** 1 if supplied with water this tick. */
+  readonly watered: Uint8Array;
   /** Cells to the nearest road, saturating at 255. Recomputed when roads change. */
   readonly roadDist: Uint8Array;
   /** Ticks this cell has been failing its growth conditions. Drives abandonment. */
@@ -163,7 +182,7 @@ export class Tiles {
 
   constructor(grid: Grid) {
     const n = grid.size;
-    const planes = 9;
+    const planes = 12;
     this.buffer = new ArrayBuffer(n * planes);
     let o = 0;
     const plane = () => {
@@ -174,10 +193,13 @@ export class Tiles {
     this.zone = plane();
     this.density = plane();
     this.road = plane();
+    this.powerLine = plane();
+    this.pipe = plane();
     this.level = plane();
     this.civic = plane();
     this.civicAnchor = plane();
     this.powered = plane();
+    this.watered = plane();
     this.roadDist = plane();
     this.distress = plane();
     this.roadDist.fill(255);

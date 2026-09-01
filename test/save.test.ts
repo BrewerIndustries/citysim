@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { wireUtilities } from './helpers.ts';
 import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { City } from '../src/sim/city.ts';
 import { serialize, deserialize, SAVE_VERSION } from '../src/sim/save.ts';
@@ -15,6 +16,7 @@ function played(): City {
   for (let y = 41; y < 44; y++) for (let x = 20; x < 55; x++) c.paintZone(g.index(x, y), ZONE_COM, 1);
   c.placeCivic(g.index(30, 34), 1);
   c.placeCivic(g.index(45, 34), 4);
+  wireUtilities(c);
   c.tax = { r: 11, c: 7, i: 13 };
   c.setDisasters(false);
   for (let t = 0; t < 220; t++) c.step();

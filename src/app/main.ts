@@ -168,6 +168,11 @@ function applyLocks(s: Snapshot): void {
   if (tool.civicId && !unlocked.has(tool.civicId)) selectTool(TOOLS[0]);
 }
 
+function showNetworkLayer(field: string): void {
+  const idx = LAYERS.findIndex((l) => l.field === field);
+  if (idx >= 0 && layerIndex !== idx) setLayer(idx);
+}
+
 function selectTool(t: Tool): void {
   tool = t;
   for (const b of document.querySelectorAll<HTMLElement>('.tool')) {
@@ -186,8 +191,14 @@ function selectTool(t: Tool): void {
     row.querySelectorAll('button').forEach((mb) =>
       mb.setAttribute('aria-pressed', String(mb.dataset.mode === drawMode)));
   }
+  // Picking a utility tool switches to that network's view: you cannot lay a line
+  // sensibly without seeing what is already connected.
+  if (t.kind === 'powerline') showNetworkLayer('powerNetwork');
+  else if (t.kind === 'pipe') showNetworkLayer('waterNetwork');
+
   const civicDef = t.civicId ? CIVIC_BY_ID.get(t.civicId) : null;
   brush = t.kind === 'zone' || t.kind === 'bulldoze' ? 3 : civicDef ? civicDef.size : 1;
+  if (t.kind === 'powerline' || t.kind === 'pipe') brush = 1;
   if (t.kind === 'removeroad') brush = 1;
 }
 
@@ -235,12 +246,14 @@ function setLayer(i: number): void {
     overlay = null;
     post({ type: 'layer', layer: null });
     renderer.setStaticLayer(null);
+    renderer.setNetwork(null);
   } else {
     const l = LAYERS[i];
     overlay = { lut: buildLut(RAMPS[l.ramp]), max: l.max, alpha: 0.68 };
     const terrainLayer = terrainLayers[l.field];
     renderer.setStaticLayer(terrainLayer ?? null);
-    post({ type: 'layer', layer: terrainLayer ? null : l.field });
+    renderer.setNetwork(l.network ?? null);
+    post({ type: 'layer', layer: terrainLayer || l.network ? null : l.field });
   }
 }
 
@@ -540,6 +553,12 @@ forEachCanvas((el) => el.addEventListener('pointermove', (e) => {
 
   if (tool.kind === 'road') {
     act({ kind: 'road', cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE) });
+  } else if (tool.kind === 'powerline' || tool.kind === 'pipe') {
+    act({
+      kind: 'utility',
+      cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE),
+      utility: tool.kind === 'powerline' ? 'powerLine' : 'pipe',
+    });
   } else if (tool.kind === 'removeroad') {
     act({ kind: 'removeroad', cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE) });
   } else {
@@ -594,6 +613,8 @@ function commitPreview(): void {
     case 'removeroad': act({ kind: 'removeroad', cells }); break;
     case 'bulldoze': act({ kind: 'bulldoze', cells }); break;
     case 'zone': act({ kind: 'zone', cells, zone: tool.zone!, density }); break;
+    case 'powerline': act({ kind: 'utility', cells, utility: 'powerLine' }); break;
+    case 'pipe': act({ kind: 'utility', cells, utility: 'pipe' }); break;
     default: break;
   }
 }
@@ -610,6 +631,12 @@ function applyAt(cell: { x: number; y: number }): void {
       break;
     case 'removeroad':
       act({ kind: 'removeroad', cells: brushCells(cell.x, cell.y, brush, MAP_SIZE, MAP_SIZE) });
+      break;
+    case 'powerline':
+      act({ kind: 'utility', cells: [i], utility: 'powerLine' });
+      break;
+    case 'pipe':
+      act({ kind: 'utility', cells: [i], utility: 'pipe' });
       break;
     case 'zone':
       act({ kind: 'zone', cells: brushCells(cell.x, cell.y, brush, MAP_SIZE, MAP_SIZE), zone: tool.zone!, density });
@@ -701,7 +728,10 @@ function updateHud(s: Snapshot): void {
   $('jobs').textContent = (s.stats.jobsC + s.stats.jobsI).toLocaleString();
   const p = $('power');
   p.textContent = `${Math.round(s.power.demand)} / ${s.power.supply} MW`;
-  p.classList.toggle('neg', s.power.brownout);
+  p.classList.toggle('neg', s.power.shortfall);
+  const wtr = $('water');
+  wtr.textContent = `${Math.round(s.water.demand)} / ${s.water.supply}`;
+  wtr.classList.toggle('neg', s.water.shortfall);
 
   setBar('rci-r', s.demand.r, 'var(--res)');
   setBar('rci-c', s.demand.c, 'var(--com)');
@@ -778,7 +808,9 @@ function renderWhy(cell: InspectedCell): void {
         ? `No road anywhere near. Needs one within ${cell.roadReach} tiles.`
         : `Nearest road is ${cell.roadDist} tiles away. Needs ${cell.roadReach} or closer.`;
     } else if (reason === REASON.NO_POWER) {
-      verdict = 'Not connected to the power grid.';
+      verdict = `No power. Needs a power line within ${cell.roadReach} tiles, carrying supply from a plant.`;
+    } else if (reason === REASON.NO_WATER) {
+      verdict = `No water. Needs a pipe within ${cell.roadReach} tiles, fed by a pump.`;
     } else if (reason === REASON.LOW_DESIRABILITY) {
       const des = cell.zone === 1 ? v.desirabilityR : cell.zone === 2 ? v.desirabilityC : v.desirabilityI;
       verdict = `Desirability ${des.toFixed(0)}, needs ${requiredDesirability(cell.level)} to reach level ${cell.level + 1}.`;
@@ -846,7 +878,7 @@ worker.onmessage = (e: MessageEvent<FromWorker>) => {
     camera = new Camera(msg.width, msg.height);
     renderer = new CityRenderer(msg.width);
     renderer.setTerrain(msg.water, msg.shore, msg.terrainHeight);
-    terrainLayers = { floodRisk: msg.floodRisk };
+    terrainLayers = { floodRisk: msg.floodRisk, waterTable: msg.waterTable };
     terrain3d = {
       water: msg.water, shore: msg.shore, height: msg.terrainHeight, floodRisk: msg.floodRisk,
     };
@@ -895,6 +927,9 @@ if (import.meta.env.DEV) {
     get overlay() { return overlay; },
     get camera() { return camera; },
     get tool() { return tool; },
+    get renderer() { return renderer; },
+    get terrain3d() { return terrain3d; },
+    get viewMode() { return viewMode; },
   };
 }
 

@@ -1,7 +1,7 @@
 /** Messages between the UI and the simulation worker. */
 import type { Demand } from '../sim/demand.ts';
 import type { GrowthStats } from '../sim/growth.ts';
-import type { PowerReport } from '../sim/power.ts';
+import type { UtilityReport } from '../sim/utility.ts';
 import type { Ledger } from '../sim/city.ts';
 import type { SeriesData } from '../sim/history-series.ts';
 
@@ -13,7 +13,8 @@ export interface Snapshot {
   funds: number;
   demand: Demand;
   stats: GrowthStats;
-  power: PowerReport;
+  power: UtilityReport;
+  water: UtilityReport;
   ledger: Ledger;
   tax: { r: number; c: number; i: number };
   messages: string[];
@@ -34,6 +35,9 @@ export interface Snapshot {
   zone: Uint8Array;
   density: Uint8Array;
   road: Uint8Array;
+  powerLine: Uint8Array;
+  pipe: Uint8Array;
+  watered: Uint8Array;
   level: Uint8Array;
   civic: Uint8Array;
   powered: Uint8Array;
@@ -50,6 +54,7 @@ export interface ReadyMsg {
   shore: Uint8Array;
   terrainHeight: Uint8Array;
   floodRisk: Uint8Array;
+  waterTable: Uint8Array;
 }
 
 export interface InspectMsg {
@@ -80,6 +85,7 @@ export type ToWorker =
 export type Action =
   | { kind: 'road'; cells: number[] }
   | { kind: 'removeroad'; cells: number[] }
+  | { kind: 'utility'; cells: number[]; utility: 'powerLine' | 'pipe' }
   | { kind: 'zone'; cells: number[]; zone: number; density: number }
   | { kind: 'civic'; cell: number; civicId: number }
   | { kind: 'bulldoze'; cells: number[] };
