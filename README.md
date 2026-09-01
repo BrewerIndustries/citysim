@@ -51,8 +51,19 @@ a ¾ view for when you're looking. Offline, single-player, no DRM, no timers.
 
 ```bash
 npm install
-npm run dev       # http://localhost:5173
+npm run dev
 ```
+
+Serves on every interface, so it's reachable from other machines too:
+
+| | |
+|---|---|
+| This Mac | `http://localhost:5173` |
+| LAN | `http://192.168.68.100:5173` |
+| Tailscale | `http://100.73.182.27:5173` |
+
+(The LAN address is DHCP-assigned and can change; `npm run dev` prints the current
+Network URLs on startup.)
 
 1. **Plop a coal power plant** ($2,200). Nothing develops without power.
 2. **Draw roads** — drag to lay a line. Roads carry power as well as traffic, and every

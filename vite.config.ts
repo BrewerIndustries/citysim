@@ -4,6 +4,9 @@ import { defineConfig } from 'vite';
 // so both build from the same source into one Pages site. See .github/workflows/pages.yml.
 export default defineConfig({
   base: process.env.BASE_PATH ?? '/',
+  // Bind every interface so the dev build is reachable from other machines on the LAN
+  // and over Tailscale, not just localhost.
+  server: { host: true, port: 5173, strictPort: true },
   build: { target: 'es2022', outDir: 'dist' },
   worker: { format: 'es' },
 });
