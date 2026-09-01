@@ -135,6 +135,9 @@ function renderStats(tick: number): void {
 function renderWhy(index: number, v: Record<string, number>): void {
   const x = index % width;
   const y = Math.floor(index / width);
+  // Mirrors deriveLandValue() in src/sim/sim.ts. Every term is a real field value,
+  // which is the whole point of the field model — the panel reads the data, it does
+  // not re-guess it.
   const contributions: Array<[string, number]> = [
     ['amenity access', v.amenityAccess * 0.45],
     ['transit access', v.transitAccess * 0.30],
@@ -142,11 +145,12 @@ function renderWhy(index: number, v: Record<string, number>): void {
     ['police coverage', v.policeCover * 0.10],
     ['pollution', -v.pollution * 0.55],
     ['crime', -v.crime * 0.40],
-  ]
-    .filter(([, n]) => Math.abs(n) >= 0.5)
+  ];
+  const shown = contributions
+    .filter((c) => Math.abs(c[1]) >= 0.5)
     .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
 
-  const lines = contributions
+  const lines = shown
     .map(([name, n]) => `   ${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}  ${name}`)
     .join('\n');
 

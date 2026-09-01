@@ -22,7 +22,7 @@ const TIERS: Record<string, { size: number; label: string }> = {
 const TICK_BUDGET_MS = 100;
 
 const arg = process.argv.find((a) => a.startsWith('--tiers='));
-const wanted = (arg ? arg.slice('--tiers='.length) : '1,2').split(',');
+const wanted: string[] = (arg ? arg.slice('--tiers='.length) : '1,2').split(',');
 
 function measure(size: number, forceAllPasses: boolean, ticks: number) {
   const t0 = performance.now();
