@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { buildManual, IDEAL_ROAD_SPACING } from '../src/app/manual.ts';
 import { ROAD_REACH } from '../src/sim/roads.ts';
 import { CIVIC_DEFS, MAX_LEVEL } from '../src/sim/tiles.ts';
+import { SERIES, HISTORY_LIMIT } from '../src/sim/history-series.ts';
+import { MAX_UNDO } from '../src/sim/history.ts';
+import { AUTOSAVE_MONTHS } from '../src/app/autosave.ts';
 import { requiredDesirability } from '../src/sim/growth.ts';
 import { LAND_VALUE_TERMS } from '../src/sim/sim.ts';
 import { NEUTRAL_TAX } from '../src/sim/demand.ts';
@@ -81,4 +84,31 @@ test('the land value section lists exactly the terms the simulation uses', () =>
 
 test('the economy section quotes the real neutral tax rate', () => {
   assert.match(text(section('economy')), new RegExp(`${NEUTRAL_TAX}%`));
+});
+
+test('the manual documents every tool group and building', () => {
+  const all = manual.map((s) => text(s.html)).join(' ');
+  for (const d of CIVIC_DEFS) {
+    assert.ok(all.includes(d.label), `manual never mentions ${d.label}`);
+  }
+});
+
+test('the transit section exists now that transit is buildable', () => {
+  const t = text(section('transit'));
+  for (const d of CIVIC_DEFS.filter((x) => x.source?.field === 'transitSrc')) {
+    assert.ok(t.includes(d.label), `transit section omits ${d.label}`);
+    assert.ok(t.includes(`$${d.cost.toLocaleString()}`), `wrong cost for ${d.label}`);
+  }
+});
+
+test('the saving section quotes the real autosave cadence and undo depth', () => {
+  const t = text(section('saving'));
+  assert.match(t, new RegExp(`every ${AUTOSAVE_MONTHS} months`));
+  assert.match(t, new RegExp(`${MAX_UNDO} steps`));
+});
+
+test('the history section lists every series', () => {
+  const t = text(section('history'));
+  for (const s of SERIES) assert.ok(t.includes(s.label), `history section omits ${s.label}`);
+  assert.ok(t.includes(String(HISTORY_LIMIT)), 'should quote the real retention limit');
 });

@@ -70,8 +70,8 @@ Network URLs on startup.)
    plot must be within 3 tiles of one.
 3. **Zone** residential, commercial and industrial beside the roads. Watch the RCI meter
    in the top bar for what the city actually wants.
-4. **Add services** — police suppresses crime, parks and schools raise land value. They
-   all cost upkeep every month, so watch the budget.
+4. **Add services** — police suppresses crime, fire stations cut fire risk, parks, schools
+   and transit raise land value. They all cost upkeep every month, so watch the budget.
 5. **Use Inspect** on any tile to find out exactly why it is or isn't growing.
 
 Press **`?`** for the in-game manual — every tool, zone and building explained, including a
@@ -95,11 +95,21 @@ space-drag to pan.
 - **In-game manual** (`?`) whose every figure is read from the simulation constants rather
   than written out in prose, and pinned by tests — a manual that quotes hardcoded numbers
   goes quietly wrong the first time a constant is tuned.
+- **Transit** — bus stops and metro stations feeding transit access, the second-strongest
+  positive term in land value.
+- **Fire** — risk driven by building size and lack of fire cover, with ignition and spread.
+  Visible as a data layer so exposure is legible *before* anything burns, and switchable off.
+- **Undo/redo** (`Cmd/Ctrl+Z`), grouped so a whole drag is one step, restoring money as
+  well as tiles.
+- **Save/load** in a versioned binary format, with an autosave that resumes on reload.
+  A played city serialises to about a kilobyte.
+- **History graph** — monthly series for population, jobs, funds, net, land value and
+  pollution, each scaled to its own range.
 - **Benchmark harness** — synthetic city generator for any tier, written before any
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 34 tests
+npm test          # 61 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 

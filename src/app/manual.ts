@@ -15,6 +15,9 @@ import { NEUTRAL_TAX } from '../sim/demand.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { CELL_METRES } from '../sim/grid.ts';
 import { LAYERS } from './palette.ts';
+import { SERIES, HISTORY_LIMIT, type SeriesKey } from '../sim/history-series.ts';
+import { MAX_UNDO } from '../sim/history.ts';
+import { AUTOSAVE_MONTHS } from './autosave.ts';
 import { DENSITY_LABELS } from './tools.ts';
 
 export interface ManualSection {
@@ -272,17 +275,49 @@ export function buildManual(): ManualSection[] {
         ${table(['Layer', 'Shows'], LAYERS.map((l) => [l.label, layerHint(l.field)]))}`,
     },
     {
+      id: 'saving',
+      title: 'Saving & undo',
+      html: `
+        <p>The city <b>autosaves every ${AUTOSAVE_MONTHS} months</b> and resumes when you
+        reload the page, so a refresh does not cost you a city. <b>Save</b> keeps a separate
+        copy you can return to with <b>Load</b>; <b>New</b> starts over.</p>
+        <p>Saves live in your browser's storage for this site. They are small — a played
+        city is around a kilobyte — but clearing your browser data will remove them.</p>
+        <h4>Undo</h4>
+        <p><b>Cmd/Ctrl+Z</b> undoes, <b>Cmd/Ctrl+Shift+Z</b> redoes, up to
+        ${MAX_UNDO} steps. A whole drag counts as one step, so a road dragged across fifty
+        tiles comes back in a single press.</p>
+        <p>Undo restores the money you spent as well as the tiles, and starting a new
+        action after undoing discards the redo path.</p>`,
+    },
+    {
+      id: 'history',
+      title: 'History graph',
+      html: `
+        <p>The History panel plots one sample per month for up to
+        ${HISTORY_LIMIT} months — ${Math.round(HISTORY_LIMIT / 12)} years. Click a series
+        name to show or hide it.</p>
+        ${table(['Series', 'Shows'], SERIES.map((s) => [s.label, seriesHint(s.key)]))}
+        <p>Each series is scaled to its own range rather than sharing one axis: population
+        in the thousands and average pollution in the tens are not comparable, and forcing
+        them onto a single scale flattens everything but the largest number.</p>
+        <p>Averages are taken over <b>developed land only</b>. Averaging the whole map would
+        drown every reading in empty countryside.</p>`,
+    },
+    {
       id: 'controls',
       title: 'Controls',
       html: `
         ${table(['Input', 'Action'], [
-          ['<kbd>1</kbd>–<kbd>9</kbd>', 'Select tool'],
+          ['<kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd>, <kbd>q</kbd>–<kbd>r</kbd>', 'Select tool (shown on each button)'],
           ['Drag', 'Build. Roads draw a line; zoning and bulldoze paint a 3×3 brush'],
           ['Right-drag / <kbd>Space</kbd>+drag', 'Pan the map'],
           ['Scroll', 'Zoom, anchored on the cursor'],
           ['<kbd>=</kbd> / <kbd>-</kbd>', 'Zoom in / out'],
           ['<kbd>[</kbd> / <kbd>]</kbd>', 'Slower / faster'],
           ['<kbd>P</kbd>', 'Pause'],
+          ['<kbd>Cmd/Ctrl</kbd>+<kbd>Z</kbd>', 'Undo'],
+          ['<kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>', 'Redo'],
           ['<kbd>?</kbd> or <kbd>H</kbd>', 'Open this manual'],
           ['<kbd>Esc</kbd>', 'Close this manual'],
         ])}`,
@@ -314,6 +349,18 @@ function serviceEffect(key: string): string {
     case 'metro': return 'Transit access over a much wider area than a bus stop';
     default: return '';
   }
+}
+
+function seriesHint(key: SeriesKey): string {
+  const hints: Record<SeriesKey, string> = {
+    population: 'Total residents',
+    jobs: 'Commercial and industrial jobs combined',
+    funds: 'Money in the bank',
+    net: 'Monthly surplus or deficit — the line to watch',
+    landValue: 'Average land value across developed land',
+    pollution: 'Average pollution across developed land',
+  };
+  return hints[key];
 }
 
 function layerHint(field: string): string {

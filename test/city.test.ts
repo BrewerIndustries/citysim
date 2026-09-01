@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { City, MESSAGE_TTL } from '../src/sim/city.ts';
+import { City, MESSAGE_TTL, TICKS_PER_MONTH } from '../src/sim/city.ts';
+import { SERIES, HISTORY_LIMIT } from '../src/sim/history-series.ts';
 import { ZONE_RES, ZONE_COM, ZONE_IND, CIVIC_DEFS } from '../src/sim/tiles.ts';
 import { REASON, requiredDesirability } from '../src/sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../src/sim/sim.ts';
@@ -311,4 +312,58 @@ test('an unprotected city does eventually burn, a covered one much less', () => 
   const exposed = buildTestCity();
   for (let t = 0; t < 6000; t++) exposed.step();
   assert.ok(exposed.firesTotal > 0, 'an uncovered city should see fires over time');
+});
+
+test('the history graph records one sample per month', () => {
+  const c = buildTestCity();
+  c.firesEnabled = false;
+  const months = 25;
+  for (let t = 0; t < TICKS_PER_MONTH * months; t++) c.step();
+  for (const s of SERIES) {
+    assert.equal(
+      c.series[s.key].length, months,
+      `${s.key} recorded ${c.series[s.key].length} samples over ${months} months`,
+    );
+  }
+  const pop = c.series.population;
+  assert.ok(pop[pop.length - 1] > pop[0], 'population series should show the city growing');
+});
+
+test('series averages cover developed land, not the whole map', () => {
+  // Averaging over the entire map would drown every series in empty countryside and
+  // each one would read as a flat line near zero.
+  const c = buildTestCity();
+  c.firesEnabled = false;
+  for (let t = 0; t < TICKS_PER_MONTH * 20; t++) c.step();
+  const plane = c.fields.get('landValue');
+  let builtSum = 0;
+  let builtN = 0;
+  let wholeSum = 0;
+  for (let i = 0; i < plane.length; i++) {
+    wholeSum += plane[i];
+    if (c.tiles.level[i] > 0) { builtSum += plane[i]; builtN++; }
+  }
+  const built = builtSum / builtN;
+  const whole = wholeSum / plane.length;
+
+  const lv = c.series.landValue;
+  const latest = lv[lv.length - 1];
+  assert.ok(builtN > 50, 'need a real city to compare against');
+  assert.ok(
+    Math.abs(latest - built) < 0.5,
+    `series should record the developed-land average ${built.toFixed(2)}, got ${latest.toFixed(2)}`,
+  );
+  assert.ok(
+    Math.abs(latest - whole) > 5,
+    `and that must differ from the whole-map average ${whole.toFixed(2)}, which is diluted by empty countryside`,
+  );
+});
+
+test('history is bounded to the retention limit', () => {
+  const c = buildTestCity();
+  c.firesEnabled = false;
+  for (let t = 0; t < TICKS_PER_MONTH * (HISTORY_LIMIT + 30); t++) c.step();
+  for (const s of SERIES) {
+    assert.equal(c.series[s.key].length, HISTORY_LIMIT, `${s.key} exceeded the retention limit`);
+  }
 });

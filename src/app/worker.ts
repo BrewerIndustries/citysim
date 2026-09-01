@@ -14,6 +14,7 @@ let stepsPerSecond = 4;
 let layerName: string | null = null;
 let simMs = 0;
 let accumulator = 0;
+let lastSeriesMonth = -1;
 let last = performance.now();
 
 self.onmessage = (e: MessageEvent<ToWorker>) => {
@@ -137,6 +138,9 @@ function loop(): void {
     canRedo: c.history.canRedo,
     undoLabel: c.history.undoLabel,
     redoLabel: c.history.redoLabel,
+    // Six 600-point arrays every frame would be ~500KB/s of pure waste; the data only
+    // changes once a game month.
+    series: c.month !== lastSeriesMonth ? c.series : null,
     zone: new Uint8Array(t.zone),
     density: new Uint8Array(t.density),
     road: new Uint8Array(t.road),
@@ -145,6 +149,7 @@ function loop(): void {
     powered: new Uint8Array(t.powered),
     layer, layerName,
   };
+  lastSeriesMonth = c.month;
   const transfer: Transferable[] = [
     snap.zone.buffer, snap.density.buffer, snap.road.buffer,
     snap.level.buffer, snap.civic.buffer, snap.powered.buffer,

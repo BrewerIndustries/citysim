@@ -13,6 +13,7 @@ import { stepGrowth, tallyCity, requiredDesirability, type GrowthStats } from '.
 import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
 import { updateFireRisk, stepFires } from './fire.ts';
 import { History } from './history.ts';
+import { emptySeries, pushSample, type SeriesData } from './history-series.ts';
 
 export const TICKS_PER_MONTH = 8;
 export const ROAD_COST = 10;
@@ -41,6 +42,8 @@ export class City {
   /** Per-cell growth reason code — the data behind the Why Panel. */
   readonly reason: Uint8Array;
   readonly history = new History();
+  /** Monthly time series behind the History graph. */
+  series: SeriesData = emptySeries();
 
   funds = 50_000;
   tax = { r: NEUTRAL_TAX, c: NEUTRAL_TAX, i: NEUTRAL_TAX };
@@ -172,6 +175,16 @@ export class City {
 
     this.funds += l.net;
 
+    // Sample AFTER the ledger settles, so funds and net describe the month just closed.
+    pushSample(this.series, {
+      population: this.stats.population,
+      jobs: this.stats.jobsC + this.stats.jobsI,
+      funds: this.funds,
+      net: l.net,
+      landValue: this.averageOverBuilt('landValue'),
+      pollution: this.averageOverBuilt('pollution'),
+    });
+
     this.month++;
     if (this.month >= 12) { this.month = 0; this.year++; }
 
@@ -192,6 +205,23 @@ export class City {
    * Without a timestamp a one-off complaint ("can't build there") sat in the corner
    * of the screen for the rest of the session.
    */
+  /**
+   * Average a field over DEVELOPED land only. Averaging the whole map would swamp the
+   * signal with empty countryside and every series would read as a flat line near zero.
+   */
+  private averageOverBuilt(field: string): number {
+    const plane = this.fields.get(field as never);
+    const { level } = this.tiles;
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < level.length; i++) {
+      if (level[i] === 0) continue;
+      sum += plane[i];
+      n++;
+    }
+    return n === 0 ? 0 : sum / n;
+  }
+
   pushMessage(text: string): void {
     const head = this.messages[0];
     if (head && head.text === text) { head.tick = this.tickCount; return; }

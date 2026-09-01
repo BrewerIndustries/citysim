@@ -3,6 +3,7 @@ import type { Demand } from '../sim/demand.ts';
 import type { GrowthStats } from '../sim/growth.ts';
 import type { PowerReport } from '../sim/power.ts';
 import type { Ledger } from '../sim/city.ts';
+import type { SeriesData } from '../sim/history-series.ts';
 
 export interface Snapshot {
   type: 'frame';
@@ -24,6 +25,8 @@ export interface Snapshot {
   canRedo: boolean;
   undoLabel: string;
   redoLabel: string;
+  /** Present only on the frame a month rolls over — it's 600 points x 6 series. */
+  series: SeriesData | null;
   zone: Uint8Array;
   density: Uint8Array;
   road: Uint8Array;

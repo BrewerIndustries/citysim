@@ -8,6 +8,9 @@ import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { ZONE_LABEL, CIVIC_BY_ID, MAX_LEVEL } from '../sim/tiles.ts';
 import { buildManual, type ManualSection } from './manual.ts';
 import { writeSlot, readSlot, describeSlot, clearSlot } from './storage.ts';
+import { Chart } from './chart.ts';
+import { AUTOSAVE_MONTHS } from './autosave.ts';
+import { SERIES, type SeriesData, type SeriesKey } from '../sim/history-series.ts';
 import type { FromWorker, Snapshot, ToWorker, Action } from './protocol.ts';
 
 const MAP_SIZE = 256;
@@ -152,8 +155,44 @@ function setLayer(i: number): void {
   }
 }
 
+// ---------------------------------------------------------------- history graph
+let chart: Chart | null = null;
+let series: SeriesData | null = null;
+
+function buildChart(): void {
+  chart = new Chart($<HTMLCanvasElement>('chart'));
+  const el = $('series');
+  el.innerHTML = '';
+  for (const s of SERIES) {
+    const b = document.createElement('button');
+    b.innerHTML = `<i style="background:${s.colour}"></i>${s.label}`;
+    b.setAttribute('aria-pressed', String(chart!.visible.has(s.key)));
+    b.onclick = () => {
+      chart!.toggle(s.key);
+      b.setAttribute('aria-pressed', String(chart!.visible.has(s.key)));
+      chart!.draw(series);
+    };
+    el.appendChild(b);
+  }
+  new ResizeObserver(() => chart?.draw(series)).observe($('chart'));
+}
+
+function updateSeriesReadout(s: Snapshot): void {
+  if (!series) return;
+  const latest = (key: SeriesKey) => {
+    const arr = series![key];
+    return arr.length ? arr[arr.length - 1] : 0;
+  };
+  const fmt = (key: SeriesKey, v: number) =>
+    key === 'funds' || key === 'net' ? money(v) : Math.round(v).toLocaleString();
+  $('series-now').innerHTML = SERIES
+    .filter((x) => chart?.visible.has(x.key))
+    .map((x) => `<dt>${x.label}</dt><dd>${fmt(x.key, latest(x.key))}</dd>`)
+    .join('');
+  void s;
+}
+
 // ---------------------------------------------------------------- saving
-const AUTOSAVE_MONTHS = 4;
 let lastAutosaveMonth = -1;
 let pendingSlot: string | null = null;
 
@@ -562,6 +601,11 @@ worker.onmessage = (e: MessageEvent<FromWorker>) => {
     fit();
   } else if (msg.type === 'frame') {
     snap = msg;
+    if (msg.series) {
+      series = msg.series;
+      chart?.draw(series);
+      updateSeriesReadout(msg);
+    }
     updateHud(msg);
     // Autosave on a month boundary rather than a tick count, so the cadence is the same
     // whatever speed the player is running at.
@@ -611,6 +655,7 @@ function frame(): void {
 
 buildTools();
 buildManualUi();
+buildChart();
 buildSpeeds();
 buildLayers();
 buildOptions();
