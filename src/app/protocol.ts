@@ -15,6 +15,7 @@ export interface Snapshot {
   stats: GrowthStats;
   power: UtilityReport;
   water: UtilityReport;
+  sewage: UtilityReport;
   ledger: Ledger;
   tax: { r: number; c: number; i: number };
   messages: string[];
@@ -37,7 +38,9 @@ export interface Snapshot {
   road: Uint8Array;
   powerLine: Uint8Array;
   pipe: Uint8Array;
+  sewer: Uint8Array;
   watered: Uint8Array;
+  sewered: Uint8Array;
   level: Uint8Array;
   civic: Uint8Array;
   powered: Uint8Array;
@@ -85,7 +88,7 @@ export type ToWorker =
 export type Action =
   | { kind: 'road'; cells: number[] }
   | { kind: 'removeroad'; cells: number[] }
-  | { kind: 'utility'; cells: number[]; utility: 'powerLine' | 'pipe' }
+  | { kind: 'utility'; cells: number[]; utility: 'powerLine' | 'pipe' | 'sewer' }
   | { kind: 'zone'; cells: number[]; zone: number; density: number }
   | { kind: 'civic'; cell: number; civicId: number }
   | { kind: 'bulldoze'; cells: number[] };

@@ -56,6 +56,10 @@ export interface CivicDef {
   supply?: number;
   /** Cubic metres of water supplied (pump only). */
   water?: number;
+  /** Sewage a treatment works can process. */
+  sewage?: number;
+  /** Kills the waterfront amenity nearby — raw discharge, not a place to walk. */
+  foulsWaterfront?: boolean;
   /** Must sit beside open water, or on ground with a workable water table. */
   needsWaterSource?: boolean;
   /** Emission written per tile of footprint. This is what makes clean power matter. */
@@ -128,13 +132,37 @@ export const CIVIC_DEFS: CivicDef[] = [
     note: 'The end of the energy problem' },
 
   // --- water -----------------------------------------------------------------
-  { id: 19, key: 'pump', label: 'Water pump', cost: 800, upkeep: 90, size: 2,
+  // Water and sewage are both close to mandatory, so their upkeep sets the floor on how
+  // small a city can be and still pay its way — the same trap the coal plant fell into.
+  { id: 19, key: 'pump', label: 'Water pump', cost: 800, upkeep: 55, size: 2,
     water: 2400, needsWaterSource: true, colour: '#4fa3c8',
     note: 'Must sit beside water, or on a good water table' },
   { id: 20, key: 'waterworks', label: 'Water works', cost: 4500, upkeep: 420, size: 4,
     water: 14000, needsWaterSource: true, colour: '#3a7ea0',
     unlock: { population: 7000, requires: ['pump'] },
     note: 'Six times a pump, on the same siting rule' },
+
+  // --- sewage ----------------------------------------------------------------
+  // A pipe into the river costs little to run — the price is paid in pollution, not
+  // upkeep. At $110/mo it alone tipped a viable starter city into permanent deficit.
+  { id: 21, key: 'sewage', label: 'Sewage outflow', cost: 900, upkeep: 40, size: 2,
+    sewage: 2000, needsWaterSource: true, pollution: 40, foulsWaterfront: true,
+    colour: '#8f7a4a',
+    note: 'Dumps raw into open water. Cheap, filthy, and it ruins the shore around it' },
+  { id: 22, key: 'treatment', label: 'Treatment works', cost: 6000, upkeep: 560, size: 4,
+    sewage: 16000, needsWaterSource: true, pollution: 7, colour: '#6f6136',
+    unlock: { population: 9000, requires: ['sewage'] },
+    note: 'Eight times the capacity, and a quarter of the smell' },
+
+  // --- environment -----------------------------------------------------------
+  { id: 23, key: 'cleanup', label: 'Cleanup station', cost: 3200, upkeep: 380, size: 3,
+    source: { field: 'cleanupSrc', value: 190 }, colour: '#5fb08a',
+    unlock: { population: 6000 },
+    note: 'Scrubs pollution out of the ground around it' },
+  { id: 24, key: 'reclamation', label: 'Reclamation works', cost: 11000, upkeep: 900, size: 4,
+    source: { field: 'cleanupSrc', value: 320 }, colour: '#3f8f68',
+    unlock: { population: 18000, requires: ['cleanup'] },
+    note: 'Clears a whole district of a century of industry' },
 
   // --- transit ---------------------------------------------------------------
   { id: 6, key: 'bus', label: 'Bus stop', cost: 120, upkeep: 18, size: 1,
@@ -165,6 +193,15 @@ export class Tiles {
   readonly powerLine: Uint8Array;
   /** 1 if a water pipe runs here. Pipes may share a tile with a road or a line. */
   readonly pipe: Uint8Array;
+  /**
+   * 1 if a sewer runs here.
+   *
+   * A sewer may share a tile with a road or a power line, but NEVER with a water pipe —
+   * you do not run a foul line alongside the drinking supply. That exclusion is the
+   * whole planning problem sewers introduce: the obvious route down the main street is
+   * already taken.
+   */
+  readonly sewer: Uint8Array;
   /** Development level of the grown building, 0 = empty lot. */
   readonly level: Uint8Array;
   /** Civic building id occupying this cell (0 = none). */
@@ -175,6 +212,8 @@ export class Tiles {
   readonly powered: Uint8Array;
   /** 1 if supplied with water this tick. */
   readonly watered: Uint8Array;
+  /** 1 if connected to a working sewer this tick. */
+  readonly sewered: Uint8Array;
   /** Cells to the nearest road, saturating at 255. Recomputed when roads change. */
   readonly roadDist: Uint8Array;
   /** Ticks this cell has been failing its growth conditions. Drives abandonment. */
@@ -182,7 +221,7 @@ export class Tiles {
 
   constructor(grid: Grid) {
     const n = grid.size;
-    const planes = 12;
+    const planes = 14;
     this.buffer = new ArrayBuffer(n * planes);
     let o = 0;
     const plane = () => {
@@ -195,11 +234,13 @@ export class Tiles {
     this.road = plane();
     this.powerLine = plane();
     this.pipe = plane();
+    this.sewer = plane();
     this.level = plane();
     this.civic = plane();
     this.civicAnchor = plane();
     this.powered = plane();
     this.watered = plane();
+    this.sewered = plane();
     this.roadDist = plane();
     this.distress = plane();
     this.roadDist.fill(255);

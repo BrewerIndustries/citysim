@@ -26,10 +26,11 @@ export const RAMPS: Record<string, Ramp> = {
 export const LAYERS: ReadonlyArray<{
   field: string; label: string; ramp: keyof typeof RAMPS; max: number;
   /** Networks are drawn from tile planes by the renderer, not sampled from a field. */
-  network?: 'power' | 'water';
+  network?: 'power' | 'water' | 'sewer';
 }> = [
   { field: 'powerNetwork', label: 'Power network', ramp: 'nuisance', max: 255, network: 'power' },
   { field: 'waterNetwork', label: 'Water network', ramp: 'coverage', max: 255, network: 'water' },
+  { field: 'sewerNetwork', label: 'Sewer network', ramp: 'nuisance', max: 255, network: 'sewer' },
   { field: 'waterTable', label: 'Water table', ramp: 'coverage', max: 255 },
   { field: 'landValue', label: 'Land value', ramp: 'value', max: 120 },
   { field: 'desirabilityR', label: 'Desirability — residential', ramp: 'value', max: 120 },
@@ -43,6 +44,7 @@ export const LAYERS: ReadonlyArray<{
   { field: 'fireCover', label: 'Fire coverage', ramp: 'coverage', max: 255 },
   { field: 'schoolCover', label: 'School coverage', ramp: 'coverage', max: 255 },
   { field: 'transitAccess', label: 'Transit access', ramp: 'coverage', max: 255 },
+  { field: 'cleanupCover', label: 'Cleanup coverage', ramp: 'coverage', max: 255 },
   { field: 'amenityAccess', label: 'Amenity access', ramp: 'coverage', max: 255 },
   { field: 'jobAccess', label: 'Job access', ramp: 'coverage', max: 255 },
   { field: 'popR', label: 'Residents (raw)', ramp: 'source', max: 30 },

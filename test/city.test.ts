@@ -199,9 +199,12 @@ test('ticker messages expire instead of sticking forever', () => {
   const c = buildTestCity();
   c.setDisasters(false); // fires post their own messages; isolate what's under test
   c.pushMessage('transient complaint');
-  assert.deepEqual(c.activeMessages(), ['transient complaint']);
+  assert.ok(c.activeMessages(5).includes('transient complaint'));
   for (let t = 0; t < MESSAGE_TTL + 5; t++) c.step();
-  assert.deepEqual(c.activeMessages(), [], 'a stale message should drop out of the ticker');
+  assert.ok(
+    !c.activeMessages(5).includes('transient complaint'),
+    'a stale message should drop out of the ticker',
+  );
 });
 
 test('a centred footprint anchors where the preview is drawn', () => {

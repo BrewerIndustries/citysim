@@ -10,7 +10,7 @@ import { ROAD_REACH } from '../sim/roads.ts';
 import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, TICKS_PER_MONTH, ROAD_UPKEEP } from '../sim/city.ts';
 import { CIVIC_DEFS, MAX_LEVEL, ZONE_LABEL } from '../sim/tiles.ts';
 import { requirementText } from '../sim/unlocks.ts';
-import { requiredDesirability, REASON_TEXT, DECLINE_BELOW, DISTRESS_LIMIT, residentsAt, jobsAt } from '../sim/growth.ts';
+import { requiredDesirability, REASON_TEXT, DECLINE_BELOW, DISTRESS_LIMIT, SEPTIC_MAX_LEVEL, residentsAt, jobsAt } from '../sim/growth.ts';
 import { POWER, WATER, UTILITY_REACH } from '../sim/utility.ts';
 import { NEUTRAL_TAX } from '../sim/demand.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
@@ -98,7 +98,8 @@ export function buildManual(): ManualSection[] {
           ground with a water table beneath it.</li>
           <li><b>Draw roads</b> where you want the city to be.</li>
           <li><b>Lay a power line and a water pipe</b> along those roads, back to the plant
-          and the pump. All three share a tile, so drag them down the same streets.</li>
+          and the pump. All three share a tile, so drag them down the same streets.
+          <b>Sewers cannot</b> — they run down the next street over.</li>
           <li><b>Zone</b> beside the roads — residential first, then commercial and
           industrial for jobs.</li>
           <li><b>Watch the RCI meter</b> in the top bar. It shows what the city is short of.</li>
@@ -224,8 +225,10 @@ export function buildManual(): ManualSection[] {
         <p>Buildings draw <b>${WATER.draw(1)} per level</b>. Nothing develops without
         water, and a building cut off from it declines just as it would without power.</p>
         <h4>Where a pump can go</h4>
-        <p>A pump needs something to draw from: <b>open water beside it</b>, or ground with
-        a workable <b>water table</b> beneath it. Turn on the <b>Water table</b> layer to
+        <p><b>A pump needs power.</b> No electricity, no water — so the chain runs plant,
+        line, pump, pipe, homes, and cutting the power cuts the water with it.</p>
+        <p>A pump also needs something to draw from: <b>open water beside it</b>, or ground
+        with a workable <b>water table</b> beneath it. Turn on the <b>Water table</b> layer to
         see where the aquifers are — they favour low ground, and they vary a great deal
         from map to map. A coastal site always works.</p>
         ${table(['Building', 'Supplies', 'Cost', 'Upkeep', 'Size'],
@@ -272,6 +275,54 @@ export function buildManual(): ManualSection[] {
         district reach the desirability needed for high-density towers.</p>
         <p class="tip">Transit does not yet move anyone — it raises access and land value.
         Actual passenger flow is a later addition.</p>`,
+    },
+    {
+      id: 'sewage',
+      title: 'Sewage',
+      html: `
+        <p>Sewage is the third network, and it works like the other two — a works with
+        capacity, sewers to carry it, everything within <b>${UTILITY_REACH} tiles</b>
+        connected. With one rule of its own:</p>
+        <p class="tip"><b>A sewer can never share a tile with a water pipe.</b> You do not
+        run a foul line alongside the drinking supply. It may share with a road or a power
+        line, so the usual answer is to run the sewer down the next street over, or the
+        far side of the block.</p>
+        <h4>It is not a third gate</h4>
+        <p>Unlike power and water, sewage does not stop a plot developing. A hamlet
+        manages on septic tanks. What it does is <b>cap an unsewered plot at level
+        ${SEPTIC_MAX_LEVEL}</b>, and leak: septic housing quietly pollutes its own
+        neighbourhood. So sewers are what you need in order to <i>densify</i>, not
+        something to lay before the first house appears.</p>
+        ${table(['Building', 'Capacity', 'Cost', 'Upkeep', 'Pollution'],
+          CIVIC_DEFS.filter((d) => d.sewage).map((d) => [
+            d.label, d.sewage!.toLocaleString(), money(d.cost), money(d.upkeep) + ' / mo',
+            String(d.pollution ?? 0),
+          ]))}
+        <h4>Dumping versus treating</h4>
+        <p>A <b>sewage outflow</b> is a pipe into the river. It is cheap and it works, and
+        it costs you twice: heavy pollution around it, and the <b>waterfront amenity is
+        destroyed</b> for some distance either side — raw discharge is not somewhere
+        anyone wants to live. A <b>treatment works</b> costs far more and is nearly clean.</p>
+        <p>Both must sit beside open water or on a workable water table, like a pump, and
+        <b>both need power</b>.</p>`,
+    },
+    {
+      id: 'pollution',
+      title: 'Cleaning up',
+      html: `
+        <p>Pollution is not permanent. A <b>cleanup station</b> scrubs it out of the ground
+        around it — full coverage removes about <b>85%</b> of what is on a tile. This is
+        remediation rather than prevention: it works on the mess already made, so a city
+        that industrialised hard in its first century can be cleaned up rather than only
+        bulldozed.</p>
+        ${table(['Building', 'Cost', 'Upkeep', 'Size', 'Requires'],
+          CIVIC_DEFS.filter((d) => d.source?.field === 'cleanupSrc').map((d) => [
+            d.label, money(d.cost), money(d.upkeep) + ' / mo', `${d.size}×${d.size}`,
+            requirementText(d),
+          ]))}
+        <p>Turn on the <b>Cleanup coverage</b> layer to see the reach, and <b>Pollution</b>
+        to watch it come down. Cleaning up an old industrial quarter is often cheaper than
+        the land value it recovers.</p>`,
     },
     {
       id: 'disasters',
@@ -513,7 +564,11 @@ function serviceEffect(key: string): string {
     case 'firehq': return 'Fire coverage across a whole district';
     case 'university': return 'A large land-value lift, and the route to nuclear power';
     case 'bigpark': return 'The strongest land-value lift in the game';
-    case 'pump': return 'Feeds the water network. Needs water beside it or beneath it';
+    case 'pump': return 'Feeds the water network. Needs power, and water beside or beneath it';
+    case 'sewage': return 'Dumps raw into open water. Cheap, filthy, ruins the shore';
+    case 'treatment': return 'Eight times the capacity and a quarter of the smell';
+    case 'cleanup': return 'Scrubs pollution out of the ground around it';
+    case 'reclamation': return 'Clears a whole district of a century of industry';
     case 'waterworks': return 'Six times a pump, on the same siting rule';
     case 'rail': return 'Transit access across a whole quarter';
     case 'bus': return 'Transit access nearby — cheap, and a strong lift to land value';
@@ -547,6 +602,8 @@ function layerHint(field: string): string {
     powerNetwork: 'Your power lines, what they reach, and in red what they are failing to serve',
     waterNetwork: 'Your pipes, what they reach, and in red what they are failing to serve',
     waterTable: 'Underground water. A pump needs this, or open water beside it',
+    sewerNetwork: 'Your sewers, what they reach, and in red what they are failing to serve',
+    cleanupCover: 'Reach of your cleanup stations — where pollution is being removed',
     policeCover: 'Reach of your police stations',
     fireCover: 'Reach of your fire stations',
     schoolCover: 'Reach of your schools',

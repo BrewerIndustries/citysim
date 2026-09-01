@@ -21,9 +21,11 @@ export const SHORE = rgb(48, 62, 52);
 /** Utility networks. Warm for power, cool for water — legible together or apart. */
 export const POWER_LINE = rgb(224, 198, 90);
 export const PIPE_LINE = rgb(79, 163, 200);
+export const SEWER_LINE = rgb(160, 134, 74);
 /** Land inside a live network's reach, shown behind the lines themselves. */
 export const POWER_REACH = rgb(74, 66, 28);
 export const PIPE_REACH = rgb(28, 58, 74);
+export const SEWER_REACH = rgb(58, 48, 26);
 export const DEAD_UTILITY = rgb(88, 74, 74);
 /** Plants and pumps in a network view — where the network has to reach. */
 export const SOURCE_MARK = rgb(255, 255, 255);

@@ -200,8 +200,12 @@ test('an unattached pump is reported, not left to be guessed at', () => {
   const c = new City(128, 1, FLAT_MAP);
   c.funds = 1_000_000;
   assert.ok(c.placeCivic(c.grid.index(40, 40), pump.id).ok);
+  // Powered, so the ONLY thing wrong is that nothing is piped to it.
+  assert.ok(c.placeCivic(c.grid.index(40, 46), plant.id).ok);
+  for (let y = 41; y < 46; y++) c.buildUtility(c.grid.index(40, y), 'powerLine');
   c.step();
-  assert.equal(c.water.supply, 2400, 'supply is still counted');
+  c.step();
+  assert.equal(c.water.supply, 2400, 'a powered pump still counts toward supply');
   assert.equal(c.water.isolatedSources.length, 1, 'but the pump should be reported as unattached');
   assert.deepEqual(c.water.isolatedSources[0], { x: 40, y: 40 });
 

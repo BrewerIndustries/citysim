@@ -8,7 +8,7 @@ import { Fields } from './fields.ts';
 import { Simulation } from './sim.ts';
 import { Tiles, CIVIC_BY_ID, CIVIC_DEFS, ZONE_RES, ZONE_COM, ZONE_IND, MAX_LEVEL } from './tiles.ts';
 import { recomputeRoadDistance, ROAD_REACH } from './roads.ts';
-import { UtilityGrid, POWER, WATER, type UtilityReport } from './utility.ts';
+import { UtilityGrid, POWER, WATER, SEWAGE, type UtilityReport } from './utility.ts';
 import { stepGrowth, tallyCity, requiredDesirability, type GrowthStats } from './growth.ts';
 import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
 import { updateFireRisk, stepFires } from './fire.ts';
@@ -32,6 +32,9 @@ export const LINE_COST = 6;
 export const PIPE_COST = 6;
 export const LINE_UPKEEP = 0.15;
 export const PIPE_UPKEEP = 0.15;
+
+/** The three networks a player lays by hand. */
+export type UtilityKind = 'powerLine' | 'pipe' | 'sewer';
 /** Ticks a one-off event (a fire, a flood, an achievement) stays on screen. */
 export const MESSAGE_TTL = 220;
 /**
@@ -44,6 +47,8 @@ export const MESSAGE_TTL = 220;
 export const CONDITION_TTL = 20;
 /** Amenity value of a waterfront tile. Below a park's, but it runs the whole coast. */
 export const SHORE_AMENITY = 48;
+/** How far a raw sewage outflow spoils the waterfront around it. */
+export const FOUL_REACH = 12;
 /** Source fields written from what the player has built. */
 const GROWTH_SOURCE_FIELDS = ['popR', 'jobsC', 'jobsI', 'emission', 'crimeGen'] as const;
 
@@ -79,8 +84,9 @@ export class City {
     population: 0, jobsC: 0, jobsI: 0, developedCells: 0,
     zonedCells: 0, abandonedThisTick: 0, grewThisTick: 0,
   };
-  power: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [] };
-  water: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [] };
+  power: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [], unpoweredSources: [] };
+  water: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [], unpoweredSources: [] };
+  sewage: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [], unpoweredSources: [] };
   ledger: Ledger = { taxR: 0, taxC: 0, taxI: 0, upkeepCivic: 0, upkeepRoads: 0, net: 0 };
   bankrupt = false;
   /** Sticky: needed by the 'back from the brink' achievement. */
@@ -113,16 +119,18 @@ export class City {
   private readonly changes: ChangeLog;
   /** Set when a change is too broad to track cell by cell (load, undo, first tick). */
   private sourcesAllDirty = true;
+  /** Remaining full source rewrites owed after a utility network changed. */
+  private sourceRefreshes = 0;
   /** Fires draw from their own stream so toggling them can't shift the rest of the sim. */
   private readonly rngFire: Rng;
   private readonly queue: Int32Array;
   private readonly powerGrid: UtilityGrid;
   private readonly waterGrid: UtilityGrid;
+  private readonly sewageGrid: UtilityGrid;
   /** Maintained as things are built, so the monthly ledger needs no full-grid scan. */
   private sourceRegions: import('./dirty.ts').DirtyRegion[] | undefined;
   private roadCells = 0;
-  private lineCells = 0;
-  private pipeCells = 0;
+  private readonly utilityCells: Record<UtilityKind, number> = { powerLine: 0, pipe: 0, sewer: 0 };
   private civicUpkeep = 0;
   private tickCount = 0;
 
@@ -137,8 +145,9 @@ export class City {
     this.terrain = new Terrain(this.grid, mapSeed);
     this.refreshUnlocks();
     this.queue = new Int32Array(this.grid.size);
-    this.powerGrid = new UtilityGrid(this.grid.size, POWER);
-    this.waterGrid = new UtilityGrid(this.grid.size, WATER);
+    this.powerGrid = new UtilityGrid(this.grid.size, POWER, this.grid.width);
+    this.waterGrid = new UtilityGrid(this.grid.size, WATER, this.grid.width);
+    this.sewageGrid = new UtilityGrid(this.grid.size, SEWAGE, this.grid.width);
     this.changes = new ChangeLog(Math.min(this.grid.size, 1 << 20));
   }
 
@@ -153,20 +162,20 @@ export class City {
    */
   /** Rebuild the incremental ledger counters from scratch. */
   recountUpkeep(): void {
-    const { road, powerLine, pipe, civic, civicAnchor } = this.tiles;
+    const { road, powerLine, pipe, sewer, civic, civicAnchor } = this.tiles;
     let roads = 0;
-    let lines = 0;
-    let pipes = 0;
     let upkeep = 0;
+    this.utilityCells.powerLine = 0;
+    this.utilityCells.pipe = 0;
+    this.utilityCells.sewer = 0;
     for (let i = 0; i < road.length; i++) {
       if (road[i]) roads++;
-      if (powerLine[i]) lines++;
-      if (pipe[i]) pipes++;
+      if (powerLine[i]) this.utilityCells.powerLine++;
+      if (pipe[i]) this.utilityCells.pipe++;
+      if (sewer[i]) this.utilityCells.sewer++;
       if (civicAnchor[i]) upkeep += CIVIC_BY_ID.get(civic[i])?.upkeep ?? 0;
     }
     this.roadCells = roads;
-    this.lineCells = lines;
-    this.pipeCells = pipes;
     this.civicUpkeep = upkeep;
   }
 
@@ -188,7 +197,18 @@ export class City {
 
   markRoadsDirty(): void { this.roadsDirty = true; }
   /** Anything that changes what carries a utility, or where it comes from. */
-  markUtilitiesDirty(): void { this.powerGrid.markDirty(); this.waterGrid.markDirty(); }
+  markUtilitiesDirty(): void {
+    this.powerGrid.markDirty();
+    this.waterGrid.markDirty();
+    this.sewageGrid.markDirty();
+    // Septic emission depends on whether a cell is SEWERED, which is DERIVED from the
+    // network rather than authored, and the networks are recomputed after the sources
+    // are written. So one refresh isn't enough: the first happens before `sewered` has
+    // been updated and writes the old answer. Two passes lets the second see the
+    // settled network. Without this, connecting a sewer never stopped the buildings it
+    // now served from leaking.
+    this.sourceRefreshes = 2;
+  }
   markCivicsDirty(): void { this.civicsDirty = true; this.markUtilitiesDirty(); }
 
   /** Set to accumulate per-phase timings into `profile`. Off by default. */
@@ -218,6 +238,7 @@ export class City {
     this.phase('power', () => {
       this.power = this.powerGrid.step(this.grid, this.tiles);
       this.water = this.waterGrid.step(this.grid, this.tiles);
+      this.sewage = this.sewageGrid.step(this.grid, this.tiles);
     });
     this.changes.reset();
     this.phase('growth', () => {
@@ -275,7 +296,7 @@ export class City {
     // month cost 35ms a tick at Tier 3 for numbers that change by one at a time.
     l.upkeepCivic = this.civicUpkeep;
     l.upkeepRoads = this.roadCells * ROAD_UPKEEP
-      + this.lineCells * LINE_UPKEEP + this.pipeCells * PIPE_UPKEEP;
+      + (this.utilityCells.powerLine + this.utilityCells.pipe + this.utilityCells.sewer) * LINE_UPKEEP;
     l.net = l.taxR + l.taxC + l.taxI - l.upkeepCivic - l.upkeepRoads;
 
     this.funds += l.net;
@@ -321,6 +342,21 @@ export class City {
     }
     for (const s of this.water.isolatedSources) {
       this.pushMessage(`The water pump at ${s.x}, ${s.y} has no pipe attached to it.`, CONDITION_TTL);
+    }
+    for (const s of this.sewage.isolatedSources) {
+      this.pushMessage(`The sewage works at ${s.x}, ${s.y} has no sewer attached to it.`, CONDITION_TTL);
+    }
+    for (const s of this.water.unpoweredSources) {
+      this.pushMessage(`The water pump at ${s.x}, ${s.y} has no power — it is pumping nothing.`, CONDITION_TTL);
+    }
+    for (const s of this.sewage.unpoweredSources) {
+      this.pushMessage(`The sewage works at ${s.x}, ${s.y} has no power.`, CONDITION_TTL);
+    }
+    if (this.sewage.shortfall) {
+      this.pushMessage(
+        `Sewers overloaded: ${Math.round(this.sewage.demand)} against ${this.sewage.supply} of capacity.`,
+        CONDITION_TTL,
+      );
     }
     if (this.water.shortfall) {
       this.pushMessage(
@@ -427,6 +463,10 @@ export class City {
    * exactly where — which is what lets a settled city cost almost nothing.
    */
   private applySourceChanges(): void {
+    if (this.sourceRefreshes > 0) {
+      this.sourceRefreshes--;
+      this.sourcesAllDirty = true;
+    }
     if (this.sourcesAllDirty) {
       this.writeGrowthSources();
       this.sim.markAllDirty();
@@ -483,17 +523,22 @@ export class City {
     if (lvl === 0) return;
     const z = zone[i];
     const den = density[i];
+    // What isn't carried away has to go somewhere. Kept to a nuisance rather than an
+    // industrial dose: at 1.6 per level-density a septic street polluted a third as hard
+    // as heavy industry and simply demolished itself, which is a punishment, not a
+    // trade-off.
+    const septic = this.tiles.sewered[i] ? 0 : lvl * (den + 1) * 0.5;
     if (z === ZONE_RES) {
       popR[i] = lvl * (den + 1) * 6;
-      emission[i] = lvl * 0.4;
+      emission[i] = lvl * 0.4 + septic;
       crimeGen[i] = 1.5 + lvl * (den + 1) * 0.5;
     } else if (z === ZONE_COM) {
       jobsC[i] = lvl * (den + 1) * 4;
-      emission[i] = lvl * 0.9;
+      emission[i] = lvl * 0.9 + septic;
       crimeGen[i] = 2 + lvl * (den + 1) * 0.6;
     } else if (z === ZONE_IND) {
       jobsI[i] = lvl * (den + 1) * 5;
-      emission[i] = 8 + lvl * (den + 1) * 3.2;
+      emission[i] = 8 + lvl * (den + 1) * 3.2 + septic;
       crimeGen[i] = 1.5 + lvl * 0.4;
     }
   }
@@ -522,6 +567,22 @@ export class City {
     const amenity = this.fields.get('amenity');
     const shore = this.terrain.shore;
     for (let i = 0; i < shore.length; i++) if (shore[i]) amenity[i] = SHORE_AMENITY;
+
+    // A raw outflow ruins the shore it discharges into. The waterfront premium is the
+    // first thing you lose by dumping untreated, before the pollution even spreads.
+    const { width, height } = this.grid;
+    for (let i = 0; i < this.tiles.civic.length; i++) {
+      if (!this.tiles.civicAnchor[i]) continue;
+      const def = CIVIC_BY_ID.get(this.tiles.civic[i]);
+      if (!def?.foulsWaterfront) continue;
+      const ax = i & (width - 1);
+      const ay = i >>> this.grid.shift;
+      for (let y = Math.max(0, ay - FOUL_REACH); y <= Math.min(height - 1, ay + FOUL_REACH); y++) {
+        for (let x = Math.max(0, ax - FOUL_REACH); x <= Math.min(width - 1, ax + FOUL_REACH); x++) {
+          amenity[this.grid.index(x, y)] = 0;
+        }
+      }
+    }
     // Civic sources changed wholesale; the affected fields are cheap and rarely touched.
     for (const def of CIVIC_DEFS) if (def.source) this.sim.markSourceAll(def.source.field);
     const { civic, civicAnchor } = this.tiles;
@@ -597,31 +658,50 @@ export class City {
    * Lay a power line or a water pipe. Both may share a tile with a road — utilities run
    * under the street, which is where they belong and how a real city is laid out.
    */
-  buildUtility(i: number, kind: 'powerLine' | 'pipe'): boolean {
+  buildUtility(i: number, kind: UtilityKind): boolean {
     const t = this.tiles;
-    const plane = kind === 'powerLine' ? t.powerLine : t.pipe;
+    const plane = this.utilityPlane(kind);
     if (plane[i] || this.terrain.water[i]) return false;
+    // A sewer never shares a tile with the drinking supply, in either direction.
+    if (kind === 'sewer' && t.pipe[i]) return false;
+    if (kind === 'pipe' && t.sewer[i]) return false;
     const cost = kind === 'powerLine' ? LINE_COST : PIPE_COST;
     if (!this.canAfford(cost)) return false;
     this.history.touch(t, i);
     this.spend(cost);
     plane[i] = 1;
-    if (kind === 'powerLine') this.lineCells++; else this.pipeCells++;
+    this.utilityCells[kind]++;
     this.markUtilitiesDirty();
     return true;
   }
 
-  removeUtility(i: number, kind: 'powerLine' | 'pipe'): boolean {
+  removeUtility(i: number, kind: UtilityKind): boolean {
     const t = this.tiles;
-    const plane = kind === 'powerLine' ? t.powerLine : t.pipe;
+    const plane = this.utilityPlane(kind);
     if (!plane[i]) return false;
     if (!this.canAfford(ROAD_REMOVE_COST)) return false;
     this.history.touch(t, i);
     this.spend(ROAD_REMOVE_COST);
     plane[i] = 0;
-    if (kind === 'powerLine') this.lineCells--; else this.pipeCells--;
+    this.utilityCells[kind]--;
     this.markUtilitiesDirty();
     return true;
+  }
+
+  /** Why a utility can't be laid here, for the interface to explain. */
+  utilityBlockedBy(i: number, kind: UtilityKind): string | null {
+    const t = this.tiles;
+    if (this.terrain.water[i]) return 'open water';
+    if (this.utilityPlane(kind)[i]) return null;
+    if (kind === 'sewer' && t.pipe[i]) return 'a water pipe already runs here';
+    if (kind === 'pipe' && t.sewer[i]) return 'a sewer already runs here';
+    return null;
+  }
+
+  private utilityPlane(kind: UtilityKind): Uint8Array {
+    return kind === 'powerLine' ? this.tiles.powerLine
+      : kind === 'pipe' ? this.tiles.pipe
+      : this.tiles.sewer;
   }
 
   paintZone(i: number, zone: number, density: number): boolean {
@@ -752,11 +832,13 @@ export class City {
       this.markCivicsDirty();
     }
     if (t.road[i]) { this.roadCells--; this.markRoadsDirty(); }
-    if (t.powerLine[i]) { this.lineCells--; this.markUtilitiesDirty(); }
-    if (t.pipe[i]) { this.pipeCells--; this.markUtilitiesDirty(); }
+    if (t.powerLine[i]) { this.utilityCells.powerLine--; this.markUtilitiesDirty(); }
+    if (t.pipe[i]) { this.utilityCells.pipe--; this.markUtilitiesDirty(); }
+    if (t.sewer[i]) { this.utilityCells.sewer--; this.markUtilitiesDirty(); }
     t.road[i] = 0;
     t.powerLine[i] = 0;
     t.pipe[i] = 0;
+    t.sewer[i] = 0;
     t.zone[i] = 0;
     t.density[i] = 0;
     t.level[i] = 0;

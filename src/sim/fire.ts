@@ -18,8 +18,13 @@ import type { ChangeLog } from './dirty.ts';
 
 /** Fraction of base risk removed by complete fire coverage. */
 const COVER_EFFECT = 0.92;
-/** Per-tick ignition chance for one fully-exposed level-1 building. */
-const IGNITION_RATE = 0.0000075;
+/**
+ * Per-tick ignition chance for one fully-exposed building, per unit of risk.
+ *
+ * Tuned so a few hundred uncovered buildings see a fire every several months. A large
+ * city burns proportionally more, which is what fire coverage is for.
+ */
+const IGNITION_RATE = 0.000082;
 /** Chance a fire spreads into each adjacent developed tile, before its own cover. */
 const SPREAD_CHANCE = 0.35;
 
@@ -62,15 +67,21 @@ export function stepFires(
   const { level } = tiles;
   const events: FireEvent[] = [];
 
-  // One draw per developed tile per tick would be O(n) RNG calls; instead sample a
-  // small number of tiles and scale the rate so the expected fires-per-tick matches.
+  // One draw per developed tile per tick would be O(n) RNG calls, so instead a handful
+  // of tiles are sampled and each hit carries the weight of the tiles not sampled.
+  //
+  // That weight is GRID SIZE over samples, not developed-cells over samples: the sample
+  // is drawn uniformly across the whole map, so most draws land on empty ground. Scaling
+  // by the developed count instead applied the sparsity twice, which made fires depend
+  // on how big the MAP was rather than how big the city was — the same town burned less
+  // simply for being placed on a larger map.
   const samples = Math.min(64, Math.max(8, developedCells >> 4));
-  const scale = developedCells / samples;
+  const weight = grid.size / samples;
 
   for (let s = 0; s < samples; s++) {
     const i = rng.int(grid.size);
     if (level[i] === 0) continue;
-    const p = (risk[i] / FIELD_MAX) * IGNITION_RATE * scale * FIELD_MAX;
+    const p = (risk[i] / FIELD_MAX) * IGNITION_RATE * weight;
     if (rng.next() >= p) continue;
 
     const burned = burn(grid, tiles, cover, rng, i, changes);

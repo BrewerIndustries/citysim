@@ -11,6 +11,7 @@ import { TOOLS, RESERVED_KEYS } from '../src/app/tools.ts';
 import { DISASTERS } from '../src/sim/disasters.ts';
 import { ACHIEVEMENTS } from '../src/sim/achievements.ts';
 import { UTILITY_REACH } from '../src/sim/utility.ts';
+import { SEPTIC_MAX_LEVEL } from '../src/sim/growth.ts';
 import { requiredDesirability } from '../src/sim/growth.ts';
 import { LAND_VALUE_TERMS } from '../src/sim/sim.ts';
 import { NEUTRAL_TAX } from '../src/sim/demand.ts';
@@ -128,12 +129,20 @@ test('no tool shortcut collides with a key the interface owns', () => {
   // Regression: once the tool list outgrew the digits it started handing out letters,
   // and 'p' went to the solar farm — which silently killed the pause shortcut, because
   // the tool lookup runs before the pause check.
+  //
+  // There are now more tools than sensible keys, so the tail of the rail is mouse-only.
+  // What must hold is that no shortcut is reserved and none is handed out twice.
   for (const t of TOOLS) {
-    assert.ok(t.key, `${t.label} has no shortcut`);
+    if (!t.key) continue;
     assert.ok(!RESERVED_KEYS.has(t.key), `${t.label} took the reserved key "${t.key}"`);
   }
-  const keys = TOOLS.map((t) => t.key);
+  const keys = TOOLS.map((t) => t.key).filter(Boolean);
   assert.equal(new Set(keys).size, keys.length, 'two tools share a shortcut');
+
+  // The tools reached for constantly must keep theirs.
+  for (const t of TOOLS.filter((x) => ['Basics', 'Utilities', 'Zoning'].includes(x.group))) {
+    assert.ok(t.key, `${t.label} is used constantly and should have a shortcut`);
+  }
 });
 
 test('the manual documents every disaster and the achievement count', () => {
@@ -160,4 +169,19 @@ test('the manual explains both utility networks', () => {
   const start = text(section('start'));
   assert.match(start, /power line/i);
   assert.match(start, /water pipe|pump/i);
+});
+
+test('the manual explains the sewer rule and the cleanup buildings', () => {
+  const s = text(section('sewage'));
+  assert.match(s, /never share a tile with a water pipe/i);
+  assert.ok(s.includes(String(SEPTIC_MAX_LEVEL)), 'should quote the real septic cap');
+  for (const d of CIVIC_DEFS.filter((x) => x.sewage)) {
+    assert.ok(s.includes(d.label), `sewage section omits ${d.label}`);
+  }
+  const p = text(section('pollution'));
+  for (const d of CIVIC_DEFS.filter((x) => x.source?.field === 'cleanupSrc')) {
+    assert.ok(p.includes(d.label), `cleanup section omits ${d.label}`);
+  }
+  // And the water section must say pumps need power.
+  assert.match(text(section('water')), /pump needs power/i);
 });

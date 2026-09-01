@@ -13,7 +13,8 @@ import type { Snapshot } from './protocol.ts';
 import {
   GROUND, GROUND_ALT, ROAD, UNPOWERED, ZONE_TINT, GRID_LINE, DEVELOPED_OUTLINE,
   WATER_DEEP, WATER_SHALLOW, SHORE, mix, buildingColour, CIVIC_COLOUR,
-  POWER_LINE, PIPE_LINE, POWER_REACH, PIPE_REACH, DEAD_UTILITY, SOURCE_MARK,
+  POWER_LINE, PIPE_LINE, SEWER_LINE, POWER_REACH, PIPE_REACH, SEWER_REACH,
+  DEAD_UTILITY, SOURCE_MARK,
 } from './citypalette.ts';
 import { SEA_LEVEL } from '../sim/terrain.ts';
 import { CIVIC_BY_ID } from '../sim/tiles.ts';
@@ -35,7 +36,7 @@ export class CityRenderer {
   private readonly gridWidth: number;
   private terrain: { water: Uint8Array; shore: Uint8Array; height: Uint8Array } | null = null;
   private staticLayer: Uint8Array | null = null;
-  private network: 'power' | 'water' | null = null;
+  private network: 'power' | 'water' | 'sewer' | null = null;
 
   constructor(gridWidth: number) {
     this.gridWidth = gridWidth;
@@ -59,7 +60,7 @@ export class CityRenderer {
    * These are drawn from the tile planes rather than sampled from a diffused field,
    * because a pipe is a thing you laid, not a value that spread.
    */
-  setNetwork(kind: 'power' | 'water' | null): void {
+  setNetwork(kind: 'power' | 'water' | 'sewer' | null): void {
     this.network = kind;
   }
 
@@ -87,7 +88,10 @@ export class CityRenderer {
     this.ensure(r.w, r.h);
     const px = this.pixels!;
     const gw = this.gridWidth;
-    const { zone, density, road, level, civic, powered, watered, powerLine, pipe, layer } = snap;
+    const {
+      zone, density, road, level, civic, powered, watered, sewered,
+      powerLine, pipe, sewer, layer,
+    } = snap;
     const net = this.network;
 
     for (let y = 0; y < r.h; y++) {
@@ -133,20 +137,22 @@ export class CityRenderer {
         if (net) {
           // Network view: the source, the conductor, the land it reaches, and — in red —
           // anything built that the network is failing to serve.
-          const conductor = net === 'power' ? powerLine[i] : pipe[i];
-          const served = net === 'power' ? powered[i] : watered[i];
+          const conductor = net === 'power' ? powerLine[i] : net === 'water' ? pipe[i] : sewer[i];
+          const served = net === 'power' ? powered[i] : net === 'water' ? watered[i] : sewered[i];
           const def = civic[i] ? CIVIC_BY_ID.get(civic[i]) : undefined;
-          const isSource = net === 'power' ? !!def?.supply : !!def?.water;
+          const isSource = net === 'power' ? !!def?.supply
+            : net === 'water' ? !!def?.water
+            : !!def?.sewage;
           if (isSource) {
             // Picked out in white: this is the thing the network has to reach, and an
             // unattached one is the single most confusing state to be in.
             c = SOURCE_MARK;
           } else if (conductor) {
-            c = net === 'power' ? POWER_LINE : PIPE_LINE;
+            c = net === 'power' ? POWER_LINE : net === 'water' ? PIPE_LINE : SEWER_LINE;
           } else if (level[i] > 0 && !served) {
             c = DEAD_UTILITY;
           } else if (served) {
-            c = mix(c, net === 'power' ? POWER_REACH : PIPE_REACH, 0.55);
+            c = mix(c, net === 'power' ? POWER_REACH : net === 'water' ? PIPE_REACH : SEWER_REACH, 0.55);
           }
           px[dstRow + x] = c;
           continue;

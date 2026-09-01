@@ -158,7 +158,7 @@ function loop(): void {
   const snap: Snapshot = {
     type: 'frame',
     tick: c.tick, month: c.month, year: c.year, funds: c.funds,
-    demand: c.demand, stats: c.stats, power: c.power, water: c.water, ledger: c.ledger, tax: c.tax,
+    demand: c.demand, stats: c.stats, power: c.power, water: c.water, sewage: c.sewage, ledger: c.ledger, tax: c.tax,
     messages: c.activeMessages(3),
     simMs,
     disasters: { ...c.disasters },
@@ -180,7 +180,9 @@ function loop(): void {
     road: new Uint8Array(t.road),
     powerLine: new Uint8Array(t.powerLine),
     pipe: new Uint8Array(t.pipe),
+    sewer: new Uint8Array(t.sewer),
     watered: new Uint8Array(t.watered),
+    sewered: new Uint8Array(t.sewered),
     level: new Uint8Array(t.level),
     civic: new Uint8Array(t.civic),
     powered: new Uint8Array(t.powered),
@@ -191,6 +193,7 @@ function loop(): void {
     snap.zone.buffer, snap.density.buffer, snap.road.buffer,
     snap.level.buffer, snap.civic.buffer, snap.powered.buffer,
     snap.powerLine.buffer, snap.pipe.buffer, snap.watered.buffer,
+    snap.sewer.buffer, snap.sewered.buffer,
   ];
   if (layer) transfer.push(layer.buffer);
   self.postMessage(snap, transfer);

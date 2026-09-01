@@ -23,6 +23,7 @@ export const REASON = {
   ABANDONING: 6,
   UNZONED: 7,
   NO_WATER: 8,
+  NO_SEWER: 9,
 } as const;
 
 export const REASON_TEXT: Record<number, string> = {
@@ -35,6 +36,7 @@ export const REASON_TEXT: Record<number, string> = {
   6: 'in decline',
   7: 'not zoned',
   8: 'no water',
+  9: 'on septic — cannot grow further without a sewer',
 };
 
 /**
@@ -48,6 +50,16 @@ export const REASON_TEXT: Record<number, string> = {
 export function requiredDesirability(level: number): number {
   return 6 + level * 10;
 }
+
+/**
+ * How far a building can develop with no sewer at all.
+ *
+ * Sewage is deliberately NOT a third hard gate like power and water. A hamlet manages
+ * on septic tanks; a city does not. So an unsewered plot builds to a couple of storeys
+ * and then stops, and meanwhile leaks — which makes sewers something you need as you
+ * densify rather than a third box to tick before anything appears at all.
+ */
+export const SEPTIC_MAX_LEVEL = 2;
 
 /** Distress accumulated before a building loses a level. */
 export const DISTRESS_LIMIT = 40;
@@ -109,7 +121,7 @@ export function stepGrowth(
   grid: Grid, tiles: Tiles, fields: Fields, demand: Demand, tick: number, reason: Uint8Array,
   changes: ChangeLog,
 ): GrowthStats {
-  const { zone, density, level, roadDist, powered, watered, distress, civic } = tiles;
+  const { zone, density, level, roadDist, powered, watered, sewered, distress, civic } = tiles;
   const dR = fields.get('desirabilityR');
   const dC = fields.get('desirabilityC');
   const dI = fields.get('desirabilityI');
@@ -148,6 +160,7 @@ export function stepGrowth(
     const hasRoad = roadDist[i] <= ROAD_REACH;
     const hasPower = powered[i] === 1;
     const hasWater = watered[i] === 1;
+    const hasSewer = sewered[i] === 1;
 
     // --- decline ---------------------------------------------------------------
     if (lvl > 0 && (!hasRoad || !hasPower || !hasWater || des < DECLINE_BELOW)) {
@@ -173,6 +186,7 @@ export function stepGrowth(
     if (!hasPower) { reason[i] = REASON.NO_POWER; continue; }
     if (!hasWater) { reason[i] = REASON.NO_WATER; continue; }
     if (lvl >= max) { reason[i] = REASON.AT_CAPACITY; continue; }
+    if (!hasSewer && lvl >= SEPTIC_MAX_LEVEL) { reason[i] = REASON.NO_SEWER; continue; }
     if (wants <= 0.02) { reason[i] = REASON.NO_DEMAND; continue; }
     if (des < requiredDesirability(lvl)) { reason[i] = REASON.LOW_DESIRABILITY; continue; }
 

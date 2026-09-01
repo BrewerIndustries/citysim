@@ -123,6 +123,7 @@ export class Simulation {
         // the union of every field's rect compounded the multiplication tick after tick
         // and set the whole city oscillating.
         if (d.dst === 'crime') this.suppressCrime(rect);
+      if (d.dst === 'pollution') this.suppressPollution(rect);
         touched = unionRect(touched, rect);
       }
     }
@@ -149,6 +150,26 @@ export class Simulation {
    * crime field it was supposed to fight went on climbing, so no amount of policing let
    * a neighbourhood densify. A fully covered area keeps 20% of its base crime.
    */
+  /**
+   * Cleanup stations scrub pollution out of the ground, the way police suppress crime.
+   *
+   * This is remediation, not prevention: it works on what is already there, so a city
+   * that industrialised heavily can be cleaned up rather than only demolished. Full
+   * coverage removes 85% of the pollution on a tile.
+   */
+  private suppressPollution(r: Rect): void {
+    const pollution = this.fields.get('pollution');
+    const cleanup = this.fields.get('cleanupCover');
+    const w = this.grid.width;
+    for (let y = r.y0; y <= r.y1; y++) {
+      const row = y * w;
+      for (let x = r.x0; x <= r.x1; x++) {
+        const i = row + x;
+        pollution[i] *= 1 - 0.85 * (cleanup[i] / FIELD_MAX);
+      }
+    }
+  }
+
   private suppressCrime(r: Rect): void {
     const crime = this.fields.get('crime');
     const police = this.fields.get('policeCover');
@@ -264,6 +285,9 @@ function clamp255(v: number): number {
  */
 const DEPENDENTS: Record<string, string[]> = {
   policeSrc: ['crimeGen'],
+  // Cleanup suppresses pollution, so moving a station has to force pollution to be
+  // recomputed even though no emission source moved.
+  cleanupSrc: ['emission'],
 };
 
 export const LAND_VALUE_BASE = 20;

@@ -195,10 +195,11 @@ function selectTool(t: Tool): void {
   // sensibly without seeing what is already connected.
   if (t.kind === 'powerline') showNetworkLayer('powerNetwork');
   else if (t.kind === 'pipe') showNetworkLayer('waterNetwork');
+  else if (t.kind === 'sewer') showNetworkLayer('sewerNetwork');
 
   const civicDef = t.civicId ? CIVIC_BY_ID.get(t.civicId) : null;
   brush = t.kind === 'zone' || t.kind === 'bulldoze' ? 3 : civicDef ? civicDef.size : 1;
-  if (t.kind === 'powerline' || t.kind === 'pipe') brush = 1;
+  if (t.kind === 'powerline' || t.kind === 'pipe' || t.kind === 'sewer') brush = 1;
   if (t.kind === 'removeroad') brush = 1;
 }
 
@@ -553,11 +554,11 @@ forEachCanvas((el) => el.addEventListener('pointermove', (e) => {
 
   if (tool.kind === 'road') {
     act({ kind: 'road', cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE) });
-  } else if (tool.kind === 'powerline' || tool.kind === 'pipe') {
+  } else if (tool.kind === 'powerline' || tool.kind === 'pipe' || tool.kind === 'sewer') {
     act({
       kind: 'utility',
       cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE),
-      utility: tool.kind === 'powerline' ? 'powerLine' : 'pipe',
+      utility: tool.kind === 'powerline' ? 'powerLine' : tool.kind === 'pipe' ? 'pipe' : 'sewer',
     });
   } else if (tool.kind === 'removeroad') {
     act({ kind: 'removeroad', cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE) });
@@ -615,6 +616,7 @@ function commitPreview(): void {
     case 'zone': act({ kind: 'zone', cells, zone: tool.zone!, density }); break;
     case 'powerline': act({ kind: 'utility', cells, utility: 'powerLine' }); break;
     case 'pipe': act({ kind: 'utility', cells, utility: 'pipe' }); break;
+    case 'sewer': act({ kind: 'utility', cells, utility: 'sewer' }); break;
     default: break;
   }
 }
@@ -637,6 +639,9 @@ function applyAt(cell: { x: number; y: number }): void {
       break;
     case 'pipe':
       act({ kind: 'utility', cells: [i], utility: 'pipe' });
+      break;
+    case 'sewer':
+      act({ kind: 'utility', cells: [i], utility: 'sewer' });
       break;
     case 'zone':
       act({ kind: 'zone', cells: brushCells(cell.x, cell.y, brush, MAP_SIZE, MAP_SIZE), zone: tool.zone!, density });
@@ -732,6 +737,9 @@ function updateHud(s: Snapshot): void {
   const wtr = $('water');
   wtr.textContent = `${Math.round(s.water.demand)} / ${s.water.supply}`;
   wtr.classList.toggle('neg', s.water.shortfall);
+  const sew = $('sewage');
+  sew.textContent = `${Math.round(s.sewage.demand)} / ${s.sewage.supply}`;
+  sew.classList.toggle('neg', s.sewage.shortfall);
 
   setBar('rci-r', s.demand.r, 'var(--res)');
   setBar('rci-c', s.demand.c, 'var(--com)');

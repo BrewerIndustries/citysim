@@ -21,6 +21,7 @@ export const FIELD_NAMES = [
   'fireSrc',         // fire station output
   'schoolSrc',       // school output
   'transitSrc',      // stop/station output
+  'cleanupSrc',      // environmental remediation output
 
   // --- diffused: spread outward from sources, decay with distance ---
   'pollution',
@@ -29,6 +30,7 @@ export const FIELD_NAMES = [
   'fireCover',
   'schoolCover',
   'transitAccess',
+  'cleanupCover',
   'amenityAccess',
   'jobAccess',
 
@@ -81,6 +83,11 @@ export const DIFFUSED: ReadonlyArray<{
   // Slow social stats — see docs/FEATURES.md, education moves over decades.
   // Phases 5 and 7 are odd, so they never collide with the every-4 passes on phase 0.
   { src: 'schoolSrc',  dst: 'schoolCover',    radius: 24, decay: 1.0,  norm: 200,  every: 10, phase: 5 },
+  // Remediation: scrubs pollution already in the ground, so a city that industrialised
+  // heavily can be cleaned up rather than only demolished. On an eight-tick rota because
+  // all four every-4 phases were taken, and cleanup coverage only changes when the
+  // player builds a station.
+  { src: 'cleanupSrc', dst: 'cleanupCover',   radius: 22, decay: 1.0,  norm: 220,  every: 8,  phase: 6 },
   { src: 'jobsC',      dst: 'jobAccess',      radius: 30, decay: 1.0,  norm: 1200, every: 10, phase: 7 },
 ];
 

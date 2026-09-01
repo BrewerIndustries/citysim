@@ -33,6 +33,8 @@ export interface UtilityReport {
    * reported explicitly rather than left for the player to deduce.
    */
   isolatedSources: Array<{ x: number; y: number }>;
+  /** Source buildings sitting dark, contributing nothing until they are wired up. */
+  unpoweredSources: Array<{ x: number; y: number }>;
 }
 
 export interface UtilitySpec {
@@ -44,6 +46,14 @@ export interface UtilitySpec {
   draw: (level: number) => number;
   /** Where the served flag is written. */
   served: (t: Tiles) => Uint8Array;
+  /**
+   * Whether this utility's own source buildings have to be powered to work.
+   *
+   * A pump is a pump: no electricity, no water. Power itself is exempt, or a city could
+   * never start. This makes the dependency chain real — plant, line, pump, pipe, homes —
+   * and means cutting the power supply also cuts the water.
+   */
+  needsPower?: boolean;
 }
 
 export const POWER: UtilitySpec = {
@@ -53,11 +63,24 @@ export const POWER: UtilitySpec = {
   served: (t) => t.powered,
 };
 
+/**
+ * Sewage is carried away rather than delivered, but the network maths is identical:
+ * a works has capacity, sewers carry it, and anything within reach is connected.
+ */
+export const SEWAGE: UtilitySpec = {
+  conductor: (t) => t.sewer,
+  capacityOf: (d) => d.sewage ?? 0,
+  draw: (level) => level * 2,
+  served: (t) => t.sewered,
+  needsPower: true,
+};
+
 export const WATER: UtilitySpec = {
   conductor: (t) => t.pipe,
   capacityOf: (d) => d.water ?? 0,
   draw: (level) => level * 2,
   served: (t) => t.watered,
+  needsPower: true,
 };
 
 export class UtilityGrid {
@@ -66,12 +89,16 @@ export class UtilityGrid {
   readonly order: Int32Array;
   orderCount = 0;
   supply = 0;
+  private anchors: Array<{ i: number; capacity: number }> = [];
   private isolated: Array<{ x: number; y: number }> = [];
   private stale = true;
   private readonly spec: UtilitySpec;
 
-  constructor(size: number, spec: UtilitySpec) {
+  private readonly width: number;
+
+  constructor(size: number, spec: UtilitySpec, width: number) {
     this.spec = spec;
+    this.width = width;
     this.depth = new Uint8Array(size);
     this.order = new Int32Array(size);
     this.depth.fill(255);
@@ -83,7 +110,7 @@ export class UtilityGrid {
     if (this.stale) {
       const r = flood(grid, tiles, this.spec, this.order, this.depth);
       this.orderCount = r.count;
-      this.supply = r.supply;
+      this.anchors = r.anchors;
       this.isolated = r.isolated;
       this.stale = false;
     }
@@ -91,12 +118,33 @@ export class UtilityGrid {
   }
 
   private account(tiles: Tiles): UtilityReport {
-    const { level } = tiles;
+    const { level, powered } = tiles;
     const served = this.spec.served(tiles);
     const { order, orderCount, depth } = this;
+
+    // Cleared every tick. Only cells the flood REACHES get set below, and only
+    // *developed* unreached cells were being cleared — so an empty cell that lost its
+    // supply kept the flag forever. That is exactly what a pump sits on, which left a
+    // pump reading as powered long after its line was cut.
+    served.fill(0);
+
+    // Supply is totalled HERE rather than during the flood, because whether a source is
+    // powered changes every tick while the network itself does not. Caching it with the
+    // flood would leave a pump reading as productive long after the lights went out.
+    let supply = 0;
+    const unpoweredSources: Array<{ x: number; y: number }> = [];
+    for (const a of this.anchors) {
+      if (this.spec.needsPower && !powered[a.i]) {
+        unpoweredSources.push({ x: a.i % this.width, y: (a.i / this.width) | 0 });
+        continue;
+      }
+      supply += a.capacity;
+    }
+    this.supply = supply;
+
     let demand = 0;
     let servedCells = 0;
-    let remaining = this.supply;
+    let remaining = supply;
 
     for (let q = 0; q < orderCount; q++) {
       const i = order[q];
@@ -120,9 +168,10 @@ export class UtilityGrid {
     }
 
     return {
-      supply: this.supply, demand, servedCells, unservedCells,
-      shortfall: demand > this.supply,
+      supply, demand, servedCells, unservedCells,
+      shortfall: demand > supply,
       isolatedSources: this.isolated,
+      unpoweredSources,
     };
   }
 }
@@ -138,7 +187,11 @@ export class UtilityGrid {
  */
 function flood(
   grid: Grid, tiles: Tiles, spec: UtilitySpec, queue: Int32Array, depth: Uint8Array,
-): { count: number; supply: number; isolated: Array<{ x: number; y: number }> } {
+): {
+  count: number;
+  anchors: Array<{ i: number; capacity: number }>;
+  isolated: Array<{ x: number; y: number }>;
+} {
   const { width, height } = grid;
   const { civic, civicAnchor } = tiles;
   const conductor = spec.conductor(tiles);
@@ -146,9 +199,8 @@ function flood(
   const limit = queue.length;
   depth.fill(255);
 
-  let supply = 0;
   let tail = 0;
-  const anchors: Array<{ i: number; size: number }> = [];
+  const anchors: Array<{ i: number; size: number; capacity: number }> = [];
 
   // Source buildings seed the flood and conduct across their own footprint, so a line
   // touching any part of a plant connects to it.
@@ -157,7 +209,7 @@ function flood(
     if (!id) continue;
     const def = CIVIC_BY_ID.get(id);
     if (!def || spec.capacityOf(def) === 0) continue;
-    if (civicAnchor[i]) { supply += spec.capacityOf(def); anchors.push({ i, size: def.size }); }
+    if (civicAnchor[i]) anchors.push({ i, size: def.size, capacity: spec.capacityOf(def) });
     if (depth[i] === 255 && tail < limit) { depth[i] = 0; queue[tail++] = i; }
   }
 
@@ -205,7 +257,7 @@ function flood(
     if (!attached) isolated.push({ x: ax, y: ay });
   }
 
-  return { count: tail, supply, isolated };
+  return { count: tail, anchors: anchors.map((a) => ({ i: a.i, capacity: a.capacity })), isolated };
 }
 
 function isSource(tiles: Tiles, spec: UtilitySpec, i: number): boolean {

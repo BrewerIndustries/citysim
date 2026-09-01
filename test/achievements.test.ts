@@ -4,7 +4,7 @@ import { wireUtilities } from './helpers.ts';
 import { City, TICKS_PER_MONTH } from '../src/sim/city.ts';
 import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { ACHIEVEMENTS } from '../src/sim/achievements.ts';
-import { CIVIC_BY_KEY, ZONE_RES } from '../src/sim/tiles.ts';
+import { CIVIC_BY_KEY, ZONE_RES, ZONE_COM, ZONE_IND } from '../src/sim/tiles.ts';
 import { serialize, deserialize } from '../src/sim/save.ts';
 
 const months = (c: City, n: number) => { for (let t = 0; t < TICKS_PER_MONTH * n; t++) c.step(); };
@@ -36,8 +36,19 @@ test('population milestones are earned by growing', () => {
   for (let y = 2; y < 8; y++) c.buildRoad(g.index(99, y));
   c.placeCivic(g.index(95, 2), CIVIC_BY_KEY.get('power')!.id);
   wireUtilities(c);
-  for (let y = 9; y < 199; y++) for (let x = 9; x < 199; x++) c.paintZone(g.index(x, y), ZONE_RES, 2);
-  months(c, 60);
+  // Houses AND jobs: a residential-only city stalls around a hundred people because
+  // nobody has anywhere to work, and no amount of land changes that.
+  for (let y = 9; y < 199; y++) {
+    for (let x = 9; x < 199; x++) {
+      const zone = x < 120 ? ZONE_RES : x < 165 ? ZONE_COM : ZONE_IND;
+      c.paintZone(g.index(x, y), zone, 2);
+    }
+  }
+  for (let x = 20; x < 190; x += 24) {
+    c.placeCivic(g.index(x, 12), CIVIC_BY_KEY.get('police')!.id);
+    c.placeCivic(g.index(x, 26), CIVIC_BY_KEY.get('park')!.id);
+  }
+  months(c, 90);
   assert.ok(c.stats.population >= 1000, `only reached ${c.stats.population}`);
   assert.ok(c.earned.has('pop-1k'), 'should have earned the 1,000-resident achievement');
 });

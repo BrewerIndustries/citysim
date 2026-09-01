@@ -3,7 +3,7 @@ import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, LINE_COST, PIPE_
 
 export type ToolKind =
   | 'inspect' | 'road' | 'removeroad' | 'zone' | 'civic' | 'bulldoze'
-  | 'powerline' | 'pipe';
+  | 'powerline' | 'pipe' | 'sewer';
 
 export interface Tool {
   id: string;
@@ -28,6 +28,10 @@ export const RESERVED_KEYS = new Set(['p', 'h', 'a', '?', '[', ']', '=', '-', '+
 
 /**
  * Shortcut keys, in rail order. Digits first, then letters — skipping the reserved ones.
+ *
+ * There are now more tools than there are sensible single keys, so the list runs out and
+ * the tail of the rail is mouse-only. That is the right way round: the tools you reach
+ * for constantly — roads, utilities, zoning — come first and keep their shortcuts.
  * (`String(8 + n)` used to hand out "10" and "11", which no single keypress produces.)
  */
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
@@ -39,7 +43,8 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
 const GROUP_OF: Record<string, string> = {
   power: 'Power', wind: 'Power', oil: 'Power', gas: 'Power',
   solar: 'Power', nuclear: 'Power', fusion: 'Power',
-  pump: 'Water', waterworks: 'Water',
+  pump: 'Water', waterworks: 'Water', sewage: 'Water', treatment: 'Water',
+  cleanup: 'Environment', reclamation: 'Environment',
   bus: 'Transit', metro: 'Transit', rail: 'Transit',
 };
 
@@ -51,6 +56,7 @@ export const TOOLS: Tool[] = assignKeys([
 
   { id: 'powerline', kind: 'powerline', label: 'Power line', key: '', cost: LINE_COST, colour: '#e0c65a', group: 'Utilities' },
   { id: 'pipe', kind: 'pipe', label: 'Water pipe', key: '', cost: PIPE_COST, colour: '#4fa3c8', group: 'Utilities' },
+  { id: 'sewer', kind: 'sewer', label: 'Sewer', key: '', cost: PIPE_COST, colour: '#8f7a4a', group: 'Utilities' },
 
   { id: 'zone-r', kind: 'zone', label: 'Residential', key: '', cost: ZONE_COST, zone: 1, colour: '#6cb46f', group: 'Zoning' },
   { id: 'zone-c', kind: 'zone', label: 'Commercial', key: '', cost: ZONE_COST, zone: 2, colour: '#5a9ed0', group: 'Zoning' },
@@ -99,6 +105,7 @@ export function modesFor(kind: ToolKind): { modes: DrawMode[]; preferred: DrawMo
     case 'removeroad':
     case 'powerline':
     case 'pipe':
+    case 'sewer':
       return { modes: ['line', 'pencil', 'rectangle'], preferred: 'line' };
     case 'zone':
     case 'bulldoze':

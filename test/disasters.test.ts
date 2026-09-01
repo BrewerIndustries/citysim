@@ -5,7 +5,11 @@ import { City } from '../src/sim/city.ts';
 import { Grid } from '../src/sim/grid.ts';
 import { Terrain, FLAT_MAP, SEA_LEVEL, FLOOD_REACH } from '../src/sim/terrain.ts';
 import { DISASTERS } from '../src/sim/disasters.ts';
-import { ZONE_RES, CIVIC_BY_KEY } from '../src/sim/tiles.ts';
+import { Fields } from '../src/sim/fields.ts';
+import { Rng } from '../src/sim/rng.ts';
+import { ChangeLog } from '../src/sim/dirty.ts';
+import { updateFireRisk, stepFires } from '../src/sim/fire.ts';
+import { ZONE_RES, CIVIC_BY_KEY, Tiles } from '../src/sim/tiles.ts';
 import { serialize, deserialize } from '../src/sim/save.ts';
 
 /** A city covering most of a watery map, so disasters have something to hit. */
@@ -117,8 +121,8 @@ test('earthquakes and tornadoes do strike a large city', () => {
   c.disasters.earthquake = true;
   c.disasters.tornado = true;
   for (let t = 0; t < 4000; t++) c.step();
-  assert.ok(c.disasterCounts.earthquake > 0, 'no earthquake in 4,000 scaled ticks');
-  assert.ok(c.disasterCounts.tornado > 0, 'no tornado in 4,000 scaled ticks');
+  assert.ok(c.disasterCounts.earthquake > 0, 'no earthquake in 12,000 scaled ticks');
+  assert.ok(c.disasterCounts.tornado > 0, 'no tornado in 12,000 scaled ticks');
   assert.ok(c.tilesLostToDisaster > 0);
 });
 
@@ -182,4 +186,55 @@ test('flood risk fades with distance from water', () => {
   for (let i = 0; i < g.size; i++) {
     if (t.floodRisk[i] > 0) assert.ok(dist[i] <= FLOOD_REACH, `cell ${i} has risk but is ${dist[i]} from water`);
   }
+});
+
+test('fire frequency follows the city, not the size of the map', () => {
+  // The sample is drawn uniformly across the whole grid, so each hit has to carry the
+  // weight of the tiles not sampled. Weighting by the DEVELOPED count instead applied
+  // the sparsity twice, and the same town burned less simply for sitting on a bigger map.
+  //
+  // Tested against stepFires directly: running two whole cities would spend most of its
+  // time watching unserviced buildings decay before they had a chance to burn.
+  const burn = (size: number) => {
+    const grid = new Grid(size, size);
+    const fields = new Fields(grid);
+    const tiles = new Tiles(grid);
+    const rng = new Rng(99);
+    const changes = new ChangeLog(1 << 16);
+
+    // The same 40x10 block of towers, wherever the map edges happen to be.
+    let developed = 0;
+    for (let y = 20; y < 30; y++) {
+      for (let x = 20; x < 60; x++) {
+        const i = grid.index(x, y);
+        tiles.zone[i] = ZONE_RES;
+        tiles.density[i] = 2;
+        tiles.level[i] = 4;
+        developed++;
+      }
+    }
+
+    let fires = 0;
+    for (let t = 0; t < 3000; t++) {
+      updateFireRisk(fields, tiles);
+      for (const e of stepFires(grid, fields, tiles, rng, developed, changes)) {
+        fires++;
+        // Rebuild what burned, so the exposure stays constant across the run.
+        for (let y = Math.max(0, e.y - 6); y <= Math.min(size - 1, e.y + 6); y++) {
+          for (let x = Math.max(0, e.x - 6); x <= Math.min(size - 1, e.x + 6); x++) {
+            const i = grid.index(x, y);
+            if (tiles.zone[i]) tiles.level[i] = 4;
+          }
+        }
+      }
+      changes.reset();
+    }
+    return fires;
+  };
+
+  const small = burn(128);
+  const large = burn(512);
+  assert.ok(small > 0 && large > 0, `expected fires on both maps, got ${small} and ${large}`);
+  const ratio = Math.max(small, large) / Math.min(small, large);
+  assert.ok(ratio < 2.5, `a 16x larger map changed the fire count ${small} -> ${large}`);
 });

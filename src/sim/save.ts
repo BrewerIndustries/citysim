@@ -17,7 +17,7 @@ import { ACHIEVEMENTS } from './achievements.ts';
 
 const MAGIC = 0x4354534d; // "CTSM"
 const END_MAGIC = 0x454e4421; // "END!"
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 /** Planes written to disk, in order. Derived planes are deliberately absent. */
 const PLANES: Array<keyof Tiles & string> = [
@@ -25,6 +25,8 @@ const PLANES: Array<keyof Tiles & string> = [
 ];
 /** Added in v6. Written after the original planes so v5 files still read cleanly. */
 const PLANES_V6: Array<keyof Tiles & string> = ['powerLine', 'pipe'];
+/** Added in v7. Appended for the same reason: older files still read cleanly. */
+const PLANES_V7: Array<keyof Tiles & string> = ['sewer'];
 
 /** Ticks of field simulation run after loading, to regenerate the derived state. */
 export const SETTLE_TICKS = 14;
@@ -149,6 +151,7 @@ export function serialize(city: City): Uint8Array {
   w.u32(bitmaskOf(city.everBuilt));
   for (const name of PLANES) writePlane(w, city.tiles[name] as Uint8Array);
   for (const name of PLANES_V6) writePlane(w, city.tiles[name] as Uint8Array);
+  for (const name of PLANES_V7) writePlane(w, city.tiles[name] as Uint8Array);
   // Sentinel. If the reader and writer ever fall out of step, this fails with "reader
   // and writer disagree" instead of a misleading complaint about corrupt tile planes —
   // which is exactly how the achievements block was first noticed to be misplaced.
@@ -227,6 +230,12 @@ export function deserialize(bytes: Uint8Array): LoadResult {
   } else {
     backfillLegacyPower(city.tiles);
   }
+  if (version >= 7) {
+    for (const name of PLANES_V7) readPlane(r, city.tiles[name] as Uint8Array);
+  }
+  // Sewers are NOT back-filled for older saves. Nothing is destroyed by their absence —
+  // buildings simply stop at septic level and start to smell, which the Why Panel says
+  // plainly and the player can fix by laying a network.
   if (version >= 5 && r.u32() !== END_MAGIC) {
     throw new Error('corrupt save: reader and writer disagree about the layout');
   }
