@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rectCells, lineCells, modesFor, DRAW_MODES, TOOLS } from '../src/app/tools.ts';
+import { CIVIC_COLOUR, GROUND } from '../src/app/citypalette.ts';
+import { CIVIC_DEFS } from '../src/sim/tiles.ts';
 
 test('a rectangle fills its box exactly', () => {
   const cells = rectCells(4, 10, 9, 13, 64, 64);
@@ -68,5 +70,28 @@ test('the tool rail never splits a group in two', () => {
     assert.ok(!seen.has(t.group), `group "${t.group}" appears twice in the rail`);
     seen.add(t.group);
     current = t.group;
+  }
+});
+
+test('every civic building has a colour to draw it with', () => {
+  // The 2D map colours civic buildings from CIVIC_COLOUR. When that was a hand-written
+  // table it fell behind the definitions, and fifteen buildings — including the water
+  // pump — rendered as bare ground the moment they were placed.
+  for (const d of CIVIC_DEFS) {
+    const c = CIVIC_COLOUR[d.id];
+    assert.ok(c !== undefined, `${d.label} has no map colour`);
+    assert.notEqual(c, GROUND, `${d.label} is indistinguishable from open ground`);
+    assert.match(d.colour, /^#[0-9a-f]{6}$/i, `${d.label} has a malformed colour "${d.colour}"`);
+  }
+});
+
+test('buildings are told apart by colour', () => {
+  // Two buildings sharing a colour is not a crash, but it is a map you cannot read.
+  const seen = new Map<number, string>();
+  for (const d of CIVIC_DEFS) {
+    const c = CIVIC_COLOUR[d.id];
+    const clash = seen.get(c);
+    assert.ok(!clash, `${d.label} and ${clash} are drawn in the same colour`);
+    seen.set(c, d.label);
   }
 });

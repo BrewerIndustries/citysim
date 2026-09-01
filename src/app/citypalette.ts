@@ -6,6 +6,8 @@
  * level drives lightness within that family.
  */
 
+import { CIVIC_DEFS } from '../sim/tiles.ts';
+
 /** Little-endian 0xAABBGGRR, written straight into a Uint32 view of ImageData. */
 export function rgb(r: number, g: number, b: number): number {
   return (255 << 24) | (b << 16) | (g << 8) | r;
@@ -23,6 +25,8 @@ export const PIPE_LINE = rgb(79, 163, 200);
 export const POWER_REACH = rgb(74, 66, 28);
 export const PIPE_REACH = rgb(28, 58, 74);
 export const DEAD_UTILITY = rgb(88, 74, 74);
+/** Plants and pumps in a network view — where the network has to reach. */
+export const SOURCE_MARK = rgb(255, 255, 255);
 export const GROUND_ALT = rgb(29, 35, 30);
 export const ROAD = rgb(66, 70, 78);
 export const ROAD_EDGE = rgb(52, 56, 63);
@@ -69,11 +73,22 @@ export function buildingColour(zone: number, level: number): number {
   return ramp[Math.min(ramp.length - 1, Math.max(0, level - 1))];
 }
 
-/** Civic building colours, indexed by civic id. */
-export const CIVIC_COLOUR: Record<number, number> = {
-  1: rgb(79, 127, 208),
-  2: rgb(208, 90, 79),
-  3: rgb(200, 164, 79),
-  4: rgb(79, 168, 106),
-  5: rgb(138, 143, 156),
-};
+/** Parse the `#rrggbb` a building defines into a packed pixel value. */
+export function parseHex(hex: string): number {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return rgb((n >> 16) & 255, (n >> 8) & 255, n & 255);
+}
+
+/**
+ * Civic building colours, indexed by civic id — derived from the definitions rather
+ * than listed here.
+ *
+ * This was a hand-written table of five entries while the game had five civic
+ * buildings. By the time there were twenty, fifteen of them — every plant past coal,
+ * both HQs, the university, the metro, and the water pump — fell through to the ground
+ * colour and were simply invisible on the map once placed. Deriving it means a new
+ * building cannot be forgotten.
+ */
+export const CIVIC_COLOUR: Record<number, number> = Object.fromEntries(
+  CIVIC_DEFS.map((d) => [d.id, parseHex(d.colour)]),
+);

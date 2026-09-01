@@ -24,6 +24,15 @@ export interface UtilityReport {
   servedCells: number;
   unservedCells: number;
   shortfall: boolean;
+  /**
+   * Source buildings with nothing attached to them.
+   *
+   * A plant or pump counts toward supply whether or not anything is connected, so an
+   * isolated one leaves the readout looking healthy — "0 / 2400" — while not a single
+   * building is served. That is the most confusing state the system can be in, so it is
+   * reported explicitly rather than left for the player to deduce.
+   */
+  isolatedSources: Array<{ x: number; y: number }>;
 }
 
 export interface UtilitySpec {
@@ -57,6 +66,7 @@ export class UtilityGrid {
   readonly order: Int32Array;
   orderCount = 0;
   supply = 0;
+  private isolated: Array<{ x: number; y: number }> = [];
   private stale = true;
   private readonly spec: UtilitySpec;
 
@@ -74,6 +84,7 @@ export class UtilityGrid {
       const r = flood(grid, tiles, this.spec, this.order, this.depth);
       this.orderCount = r.count;
       this.supply = r.supply;
+      this.isolated = r.isolated;
       this.stale = false;
     }
     return this.account(tiles);
@@ -108,7 +119,11 @@ export class UtilityGrid {
       }
     }
 
-    return { supply: this.supply, demand, servedCells, unservedCells, shortfall: demand > this.supply };
+    return {
+      supply: this.supply, demand, servedCells, unservedCells,
+      shortfall: demand > this.supply,
+      isolatedSources: this.isolated,
+    };
   }
 }
 
@@ -123,7 +138,7 @@ export class UtilityGrid {
  */
 function flood(
   grid: Grid, tiles: Tiles, spec: UtilitySpec, queue: Int32Array, depth: Uint8Array,
-): { count: number; supply: number } {
+): { count: number; supply: number; isolated: Array<{ x: number; y: number }> } {
   const { width, height } = grid;
   const { civic, civicAnchor } = tiles;
   const conductor = spec.conductor(tiles);
@@ -133,6 +148,7 @@ function flood(
 
   let supply = 0;
   let tail = 0;
+  const anchors: Array<{ i: number; size: number }> = [];
 
   // Source buildings seed the flood and conduct across their own footprint, so a line
   // touching any part of a plant connects to it.
@@ -141,7 +157,7 @@ function flood(
     if (!id) continue;
     const def = CIVIC_BY_ID.get(id);
     if (!def || spec.capacityOf(def) === 0) continue;
-    if (civicAnchor[i]) supply += spec.capacityOf(def);
+    if (civicAnchor[i]) { supply += spec.capacityOf(def); anchors.push({ i, size: def.size }); }
     if (depth[i] === 255 && tail < limit) { depth[i] = 0; queue[tail++] = i; }
   }
 
@@ -172,7 +188,24 @@ function flood(
     if (y < height - 1) { const j = i + width; if (depth[j] === 255) { depth[j] = nd; queue[tail++] = j; } }
   }
 
-  return { count: tail, supply };
+  // A source with no conductor touching its footprint can only ever serve the ground
+  // immediately around itself.
+  const isolated: Array<{ x: number; y: number }> = [];
+  for (const a of anchors) {
+    const ax = a.i & mask;
+    const ay = a.i >>> grid.shift;
+    let attached = false;
+    for (let y = ay - 1; y <= ay + a.size && !attached; y++) {
+      for (let x = ax - 1; x <= ax + a.size && !attached; x++) {
+        if (x < 0 || y < 0 || x >= width || y >= height) continue;
+        const inside = x >= ax && x < ax + a.size && y >= ay && y < ay + a.size;
+        if (!inside && conductor[y * width + x] === 1) attached = true;
+      }
+    }
+    if (!attached) isolated.push({ x: ax, y: ay });
+  }
+
+  return { count: tail, supply, isolated };
 }
 
 function isSource(tiles: Tiles, spec: UtilitySpec, i: number): boolean {

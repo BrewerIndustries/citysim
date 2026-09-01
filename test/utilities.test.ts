@@ -192,3 +192,42 @@ test('a pre-utility save keeps its lights on', () => {
   // Water is intentionally not back-filled — the player is told, not silently exempted.
   assert.equal(c.tiles.watered[c.grid.index(30, 38)], 0);
 });
+
+test('an unattached pump is reported, not left to be guessed at', () => {
+  // A source counts toward supply whether or not anything is connected to it, so an
+  // isolated pump leaves the readout looking healthy — "0 / 2400" — while nothing at
+  // all is watered. That is the most confusing state the system can produce.
+  const c = new City(128, 1, FLAT_MAP);
+  c.funds = 1_000_000;
+  assert.ok(c.placeCivic(c.grid.index(40, 40), pump.id).ok);
+  c.step();
+  assert.equal(c.water.supply, 2400, 'supply is still counted');
+  assert.equal(c.water.isolatedSources.length, 1, 'but the pump should be reported as unattached');
+  assert.deepEqual(c.water.isolatedSources[0], { x: 40, y: 40 });
+
+  // Touch a pipe to its footprint and the complaint stops.
+  c.buildUtility(c.grid.index(42, 40), 'pipe');
+  c.step();
+  assert.equal(c.water.isolatedSources.length, 0);
+});
+
+test('an unattached power plant is reported too', () => {
+  const c = new City(128, 1, FLAT_MAP);
+  c.funds = 1_000_000;
+  assert.ok(c.placeCivic(c.grid.index(30, 30), plant.id).ok);
+  c.step();
+  assert.equal(c.power.isolatedSources.length, 1);
+  c.buildUtility(c.grid.index(34, 30), 'powerLine');
+  c.step();
+  assert.equal(c.power.isolatedSources.length, 0);
+});
+
+test('a connected pump actually supplies the far end of its pipe', () => {
+  const c = new City(128, 1, FLAT_MAP);
+  c.funds = 1_000_000;
+  assert.ok(c.placeCivic(c.grid.index(40, 40), pump.id).ok);
+  for (let x = 42; x < 70; x++) c.buildUtility(c.grid.index(x, 40), 'pipe');
+  c.step();
+  assert.equal(c.tiles.watered[c.grid.index(69, 41)], 1, 'water should reach the end of the run');
+  assert.equal(c.tiles.watered[c.grid.index(69, 40 + UTILITY_REACH + 1)], 0, 'and no further than the reach');
+});

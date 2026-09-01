@@ -13,9 +13,10 @@ import type { Snapshot } from './protocol.ts';
 import {
   GROUND, GROUND_ALT, ROAD, UNPOWERED, ZONE_TINT, GRID_LINE, DEVELOPED_OUTLINE,
   WATER_DEEP, WATER_SHALLOW, SHORE, mix, buildingColour, CIVIC_COLOUR,
-  POWER_LINE, PIPE_LINE, POWER_REACH, PIPE_REACH, DEAD_UTILITY,
+  POWER_LINE, PIPE_LINE, POWER_REACH, PIPE_REACH, DEAD_UTILITY, SOURCE_MARK,
 } from './citypalette.ts';
 import { SEA_LEVEL } from '../sim/terrain.ts';
+import { CIVIC_BY_ID } from '../sim/tiles.ts';
 
 export interface Overlay {
   lut: Uint8ClampedArray;
@@ -130,11 +131,17 @@ export class CityRenderer {
         }
 
         if (net) {
-          // Network view: the conductor itself, the land it reaches, and — in red —
+          // Network view: the source, the conductor, the land it reaches, and — in red —
           // anything built that the network is failing to serve.
           const conductor = net === 'power' ? powerLine[i] : pipe[i];
           const served = net === 'power' ? powered[i] : watered[i];
-          if (conductor) {
+          const def = civic[i] ? CIVIC_BY_ID.get(civic[i]) : undefined;
+          const isSource = net === 'power' ? !!def?.supply : !!def?.water;
+          if (isSource) {
+            // Picked out in white: this is the thing the network has to reach, and an
+            // unattached one is the single most confusing state to be in.
+            c = SOURCE_MARK;
+          } else if (conductor) {
             c = net === 'power' ? POWER_LINE : PIPE_LINE;
           } else if (level[i] > 0 && !served) {
             c = DEAD_UTILITY;

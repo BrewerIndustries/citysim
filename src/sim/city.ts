@@ -71,8 +71,8 @@ export class City {
     population: 0, jobsC: 0, jobsI: 0, developedCells: 0,
     zonedCells: 0, abandonedThisTick: 0, grewThisTick: 0,
   };
-  power: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false };
-  water: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false };
+  power: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [] };
+  water: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [] };
   ledger: Ledger = { taxR: 0, taxC: 0, taxI: 0, upkeepCivic: 0, upkeepRoads: 0, net: 0 };
   bankrupt = false;
   /** Sticky: needed by the 'back from the brink' achievement. */
@@ -304,6 +304,12 @@ export class City {
     }
     if (this.power.shortfall) {
       this.pushMessage(`Brownout: demand ${Math.round(this.power.demand)} MW exceeds supply ${this.power.supply} MW.`);
+    }
+    for (const s of this.power.isolatedSources) {
+      this.pushMessage(`The power plant at ${s.x}, ${s.y} has no line attached to it.`);
+    }
+    for (const s of this.water.isolatedSources) {
+      this.pushMessage(`The water pump at ${s.x}, ${s.y} has no pipe attached to it.`);
     }
     if (this.water.shortfall) {
       this.pushMessage(`Water shortage: demand ${Math.round(this.water.demand)} exceeds supply ${this.water.supply}.`);
