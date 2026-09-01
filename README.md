@@ -65,14 +65,18 @@ Serves on every interface, so it's reachable from other machines too:
 (The LAN address is DHCP-assigned and can change; `npm run dev` prints the current
 Network URLs on startup.)
 
-1. **Plop a coal power plant** ($2,200). Nothing develops without power.
-2. **Draw roads** — drag to lay a line. Roads carry power as well as traffic, and every
-   plot must be within 3 tiles of one.
-3. **Zone** residential, commercial and industrial beside the roads. Watch the RCI meter
+1. **Plop a coal power plant** ($2,200), then run **power lines** from it out along your
+   streets. Roads carry traffic, not electricity — the wires are yours to lay.
+2. **Draw roads** — drag to lay a line. Every plot must be within 3 tiles of one.
+3. **Run water and sewer** — a pump beside open water (or over an aquifer) feeds **pipes**;
+   a sewage outflow or treatment works drains **sewers**. Pipes and sewers may share a
+   street with a road, but never with each other. Everything needs power, including the
+   pump. Low-density housing gets by on septic; anything taller needs a sewer.
+4. **Zone** residential, commercial and industrial beside the roads. Watch the RCI meter
    in the top bar for what the city actually wants.
-4. **Add services** — police suppresses crime, fire stations cut fire risk, parks, schools
+5. **Add services** — police suppresses crime, fire stations cut fire risk, parks, schools
    and transit raise land value. They all cost upkeep every month, so watch the budget.
-5. **Use Inspect** on any tile to find out exactly why it is or isn't growing.
+6. **Use Inspect** on any tile to find out exactly why it is or isn't growing.
 
 Press **`?`** for the in-game manual — every tool, zone and building explained, including a
 to-scale diagram of how far a road reaches and how far apart to space streets.
@@ -82,7 +86,7 @@ space-drag to pan.
 
 ### What's in the S0 slice
 
-- **Simulation core** — 22 field planes, struct-of-arrays over one `ArrayBuffer`, zero
+- **Simulation core** — 26 field planes, struct-of-arrays over one `ArrayBuffer`, zero
   allocation per tick. Separable double box blur giving linear falloff to zero at 2r,
   amplitude-restored and normalised onto a shared 0–255 scale.
 - **Gameplay** — zoning at three densities, road network with a distance field, power
@@ -118,10 +122,24 @@ space-drag to pan.
 - **Disasters** — fire, floods, earthquakes and tornadoes, each switchable on its own.
   Flood risk is fixed by the terrain and shown as a data layer, so it is genuinely
   avoidable: build uphill and you will never flood.
-- **Utility networks** — power and water are networks you build, not side effects of
-  paving. Each has its own layer view showing the conductor, the land it reaches, and in
-  red whatever it is failing to serve. Pumps need open water beside them or a workable
-  water table beneath, which the terrain decides.
+- **Utility networks** — power, water and sewage are three networks you build, not side
+  effects of paving. Each has its own layer view showing the conductor, the land it
+  reaches, and in red whatever it is failing to serve. Pipes and sewers can run under a
+  road but never under each other, so the two have to be routed as separate systems.
+  Pumps and sewage works need open water beside them or a workable water table beneath,
+  which the terrain decides — and they need power of their own, so a brownout takes the
+  water supply with it. A source that isn't wired to anything says so by name rather than
+  quietly counting toward a supply total it can't deliver.
+- **Sewage and its consequences** — low-density housing runs on septic and pollutes
+  modestly; above that a sewer connection is mandatory. The cheap way out is an outflow
+  pipe dumping raw sewage into open water, which is filthy and strips the waterfront
+  amenity from every shore tile within 12 — the coastline you built the city for stops
+  being worth anything. A treatment works at 9,000 people does the same job cleanly for
+  six times the price.
+- **Environmental cleanup** — pollution is repairable, not permanent. A cleanup station
+  (6,000 people) and a reclamation works (18,000) project remediation over the land and
+  pull the pollution field back down, so a district ruined by early industry can be
+  reclaimed rather than written off.
 - **Draw modes** — free-hand, line, or rectangle. Roads default to lines, zoning to
   rectangles; nothing is built until the drag ends, so the shape can be adjusted first.
 - **Two views over one simulation** (`Tab`) — the top-down Plan Mode you build in, and an
@@ -134,7 +152,7 @@ space-drag to pan.
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 128 tests
+npm test          # 147 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 
