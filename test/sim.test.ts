@@ -95,21 +95,36 @@ test('simulation is deterministic: same seed, byte-identical city', () => {
 });
 
 test('staggered passes never all land on the same tick', () => {
-  const s = new Simulation({ width: 128, height: 128, seed: 1 });
-  s.fields.get('emission')[s.grid.index(64, 64)] = 500;
-
-  const costs: number[] = [];
-  for (let t = 0; t < 40; t++) {
-    const before = performance.now();
-    s.step();
-    costs.push(performance.now() - before);
+  // Structural, not timed. The first version of this test asserted on wall-clock
+  // (worst < 2.5x median) and was flaky on CI, where a 1.4ms median and 3.8ms outlier
+  // is just runner noise. What actually matters is the SCHEDULE: with distinct phases
+  // no tick may run every pass at once, which is a property we can check exactly.
+  const cycle = DIFFUSED.reduce((acc, d) => lcm(acc, d.every), 1);
+  const counts: number[] = [];
+  for (let tick = 0; tick < cycle; tick++) {
+    counts.push(DIFFUSED.filter((d) => tick % d.every === d.phase % d.every).length);
   }
-  costs.sort((a, b) => a - b);
-  const median = costs[costs.length >> 1];
-  const worst = costs[costs.length - 1];
-  // Before phase-offsetting, tick 0/20/40 ran every pass at once and cost ~3x median.
-  assert.ok(worst < median * 2.5, `spiky tick cost: median ${median.toFixed(2)}ms, worst ${worst.toFixed(2)}ms`);
+
+  const always = DIFFUSED.filter((d) => d.every === 1).length;
+  const worst = Math.max(...counts);
+  const best = Math.min(...counts);
+
+  assert.ok(
+    worst < DIFFUSED.length,
+    `some tick runs all ${DIFFUSED.length} passes at once — phases have collided`,
+  );
+  // Every tick pays for the every-1 passes; beyond that, no tick should carry more
+  // than two extra. Before phase-offsetting, tick 0 carried all eight.
+  assert.ok(worst <= always + 2, `a tick runs ${worst} passes, expected at most ${always + 2}`);
+  assert.ok(best >= always, `a tick runs only ${best} passes, expected at least ${always}`);
+  // And the load must actually be spread, not bunched into a few heavy ticks.
+  assert.ok(worst - best <= 1, `pass count varies ${best}..${worst}, too bunched`);
 });
+
+function lcm(a: number, b: number): number {
+  const gcd = (x: number, y: number): number => (y === 0 ? x : gcd(y, x % y));
+  return (a * b) / gcd(a, b);
+}
 
 test('land value falls with pollution and rises with amenity', () => {
   const s = new Simulation({ width: 128, height: 128, seed: 3 });
