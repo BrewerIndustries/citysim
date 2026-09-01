@@ -31,9 +31,18 @@ When a batch of work is ready to try:
 cd citysim-play && git merge dev --ff-only && npm install
 ```
 
-The play server picks the changes up on its own — Vite watches the files. `--ff-only`
-is deliberate: `play` should never diverge from `dev`, it should only ever be a point
-on it, so a merge that would create a commit means something is wrong.
+`--ff-only` is deliberate: `play` should never diverge from `dev`, it should only ever be
+a point on it, so a merge that would create a commit means something is wrong.
+
+Vite watches the files, so source changes appear on their own. **A new dependency does
+not.** Vite resolves and pre-bundles dependencies when it starts, so a merge that adds a
+package leaves the running server unable to resolve it — every module importing it 500s,
+and the page loads its markup with none of its behaviour. Restart the play server after
+any merge that touched `package.json`:
+
+```bash
+cd citysim-play && npm run dev:play
+```
 
 A save made before the merge still loads afterwards, because the save format is
 versioned and older versions are migrated rather than rejected. If a change ever does
