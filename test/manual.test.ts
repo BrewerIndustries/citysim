@@ -10,7 +10,7 @@ import { SHORE_AMENITY } from '../src/sim/city.ts';
 import { TOOLS, RESERVED_KEYS } from '../src/app/tools.ts';
 import { DISASTERS } from '../src/sim/disasters.ts';
 import { ACHIEVEMENTS } from '../src/sim/achievements.ts';
-import { UTILITY_REACH } from '../src/sim/utility.ts';
+import { POWER, WATER, SEWAGE, UTILITY_REACH, type UtilitySpec } from '../src/sim/utility.ts';
 import { SEPTIC_MAX_LEVEL } from '../src/sim/growth.ts';
 import { requiredDesirability } from '../src/sim/growth.ts';
 import { LAND_VALUE_TERMS } from '../src/sim/sim.ts';
@@ -182,6 +182,23 @@ test('the manual explains the sewer rule and the cleanup buildings', () => {
   for (const d of CIVIC_DEFS.filter((x) => x.source?.field === 'cleanupSrc')) {
     assert.ok(p.includes(d.label), `cleanup section omits ${d.label}`);
   }
-  // And the water section must say pumps need power.
-  assert.match(text(section('water')), /pump needs power/i);
+});
+
+test('every utility that needs power says so, in the section that covers it', () => {
+  // The note is generated from the spec, so this test fails in the right direction: if
+  // needsPower is ever dropped from a network, the manual stops claiming it, and if one
+  // is added the manual must gain a section that explains it.
+  const covers: ReadonlyArray<[UtilitySpec, string]> =
+    [[POWER, 'power'], [WATER, 'water'], [SEWAGE, 'sewage']];
+  for (const [spec, id] of covers) {
+    const body = text(section(id));
+    if (spec.needsPower) {
+      assert.match(body, /need power of their own/i, `${id} must warn that it needs power`);
+      assert.ok(body.includes(String(UTILITY_REACH)),
+        `${id} should say how close the power line has to be`);
+    } else {
+      assert.doesNotMatch(body, /need power of their own/i,
+        `${id} does not need power, so it must not say it does`);
+    }
+  }
 });

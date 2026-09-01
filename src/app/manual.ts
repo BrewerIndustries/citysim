@@ -11,7 +11,7 @@ import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, TICKS_PER_MONTH,
 import { CIVIC_DEFS, MAX_LEVEL, ZONE_LABEL } from '../sim/tiles.ts';
 import { requirementText } from '../sim/unlocks.ts';
 import { requiredDesirability, REASON_TEXT, DECLINE_BELOW, DISTRESS_LIMIT, SEPTIC_MAX_LEVEL, residentsAt, jobsAt } from '../sim/growth.ts';
-import { POWER, WATER, UTILITY_REACH } from '../sim/utility.ts';
+import { POWER, WATER, SEWAGE, UTILITY_REACH, type UtilitySpec } from '../sim/utility.ts';
 import { NEUTRAL_TAX } from '../sim/demand.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { CELL_METRES } from '../sim/grid.ts';
@@ -83,6 +83,20 @@ function roadReachDiagram(): string {
 function table(headers: string[], rows: string[][]): string {
   return `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead>` +
     `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+}
+
+/**
+ * The "this needs power too" warning, generated from the utility spec rather than
+ * written out, so it appears exactly when `needsPower` is set and disappears if that
+ * ever changes. It is the first thing in its section because it is the failure players
+ * hit first: a pump with no line looks built, reports a supply, and delivers nothing.
+ */
+function needsPowerNote(spec: UtilitySpec, what: string, chain: string): string {
+  if (!spec.needsPower) return '';
+  return `<p class="tip"><b>${what} need power of their own.</b> They sit on the electrical
+    network like any other building, so each must be within ${UTILITY_REACH} tiles of a
+    power line that leads back to a working plant. Unpowered, it supplies nothing at all.
+    The chain is ${chain} — and a brownout at the start of it takes the rest down too.</p>`;
 }
 
 export function buildManual(): ManualSection[] {
@@ -218,6 +232,7 @@ export function buildManual(): ManualSection[] {
       id: 'water',
       title: 'Water',
       html: `
+        ${needsPowerNote(WATER, 'Pumps', 'plant, power line, pump, pipe, homes')}
         <p>Water works exactly like power, with its own network and its own layer. Pumps
         supply it, <b>pipes</b> carry it, and anything within <b>${UTILITY_REACH} tiles</b>
         of a pipe is served. Pipes can share a tile with a road and with a power line —
@@ -225,9 +240,7 @@ export function buildManual(): ManualSection[] {
         <p>Buildings draw <b>${WATER.draw(1)} per level</b>. Nothing develops without
         water, and a building cut off from it declines just as it would without power.</p>
         <h4>Where a pump can go</h4>
-        <p><b>A pump needs power.</b> No electricity, no water — so the chain runs plant,
-        line, pump, pipe, homes, and cutting the power cuts the water with it.</p>
-        <p>A pump also needs something to draw from: <b>open water beside it</b>, or ground
+        <p>A pump needs something to draw from as well as power: <b>open water beside it</b>, or ground
         with a workable <b>water table</b> beneath it. Turn on the <b>Water table</b> layer to
         see where the aquifers are — they favour low ground, and they vary a great deal
         from map to map. A coastal site always works.</p>
@@ -280,6 +293,8 @@ export function buildManual(): ManualSection[] {
       id: 'sewage',
       title: 'Sewage',
       html: `
+        ${needsPowerNote(SEWAGE, 'Sewage outflows and treatment works',
+          'plant, power line, works, sewer, homes')}
         <p>Sewage is the third network, and it works like the other two — a works with
         capacity, sewers to carry it, everything within <b>${UTILITY_REACH} tiles</b>
         connected. With one rule of its own:</p>
@@ -309,8 +324,7 @@ export function buildManual(): ManualSection[] {
         it costs you twice: heavy pollution around it, and the <b>waterfront amenity is
         destroyed</b> for some distance either side — raw discharge is not somewhere
         anyone wants to live. A <b>treatment works</b> costs far more and is nearly clean.</p>
-        <p>Both must sit beside open water or on a workable water table, like a pump, and
-        <b>both need power</b>.</p>`,
+        <p>Both must sit beside open water or on a workable water table, like a pump.</p>`,
     },
     {
       id: 'pollution',
