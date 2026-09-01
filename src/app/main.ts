@@ -38,7 +38,12 @@ let speed = 1;
 
 const post = (m: ToWorker, transfer?: Transferable[]) =>
   worker.postMessage(m, transfer ?? []);
-const act = (a: Action) => post({ type: 'act', action: a });
+// One pointer-down..pointer-up gesture is one undo step, so a dragged road is taken
+// back in a single press rather than fifty.
+let strokeId = 'stroke-0';
+let strokeSeq = 0;
+function newStroke(): void { strokeId = `stroke-${++strokeSeq}`; }
+const act = (a: Action) => post({ type: 'act', action: a, strokeId, label: tool.label });
 
 // ---------------------------------------------------------------- tool rail
 function buildTools(): void {
@@ -153,6 +158,8 @@ let lastAutosaveMonth = -1;
 let pendingSlot: string | null = null;
 
 function buildSaveUi(): void {
+  $('btn-undo').onclick = () => post({ type: 'undo' });
+  $('btn-redo').onclick = () => post({ type: 'redo' });
   $('btn-save').onclick = () => requestSave('manual');
   $('btn-load').onclick = () => loadSlot('manual');
   $('btn-new').onclick = () => {
@@ -299,6 +306,7 @@ canvas.addEventListener('pointerdown', (e) => {
   const q = pointerPos(e);
   const cell = camera.cellIndexAt(q.x, q.y, vw, vh);
   if (!cell) return;
+  newStroke();
   dragging = true;
   lastCell = cell;
   applyAt(cell);
@@ -326,7 +334,13 @@ canvas.addEventListener('pointermove', (e) => {
   lastCell = cell;
 });
 
-const endDrag = () => { dragging = false; panning = false; lastCell = null; canvas.classList.remove('panning'); };
+const endDrag = () => {
+  if (dragging) post({ type: 'endstroke' });
+  dragging = false;
+  panning = false;
+  lastCell = null;
+  canvas.classList.remove('panning');
+};
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
 canvas.addEventListener('pointerleave', () => { hover = null; });
@@ -379,6 +393,17 @@ window.addEventListener('keydown', (e) => {
   // While the manual is up it owns the keyboard — otherwise reading the Roads page
   // silently reassigns your tool.
   if (manualOpen()) return;
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault();
+    post({ type: e.shiftKey ? 'redo' : 'undo' });
+    return;
+  }
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || e.key === 'Y')) {
+    e.preventDefault();
+    post({ type: 'redo' });
+    return;
+  }
+  if (e.metaKey || e.ctrlKey) return; // leave browser shortcuts alone
   if (e.code === 'Space') { spaceDown = true; e.preventDefault(); return; }
   const t = TOOLS.find((x) => x.key === e.key);
   if (t) { selectTool(t); return; }
@@ -421,6 +446,13 @@ function updateHud(s: Snapshot): void {
   ].map(([k, v], n) =>
     `<dt>${k}</dt><dd class="${n >= 3 || (n === 5 && l.net < 0) ? (n === 5 && l.net >= 0 ? '' : 'neg') : ''}">${v}</dd>`,
   ).join('');
+
+  const undo = $<HTMLButtonElement>('btn-undo');
+  const redo = $<HTMLButtonElement>('btn-redo');
+  undo.disabled = !s.canUndo;
+  redo.disabled = !s.canRedo;
+  undo.title = s.canUndo ? `Undo ${s.undoLabel} (Cmd/Ctrl+Z)` : 'Nothing to undo';
+  redo.title = s.canRedo ? `Redo ${s.redoLabel} (Cmd/Ctrl+Shift+Z)` : 'Nothing to redo';
 
   $('fire-note').textContent = s.firesTotal === 0
     ? (s.firesEnabled ? 'No fires yet.' : 'Fires are off.')

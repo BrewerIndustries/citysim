@@ -20,6 +20,10 @@ export interface Snapshot {
   firesEnabled: boolean;
   firesTotal: number;
   tilesLostToFire: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  undoLabel: string;
+  redoLabel: string;
   zone: Uint8Array;
   density: Uint8Array;
   road: Uint8Array;
@@ -56,7 +60,10 @@ export type ToWorker =
   | { type: 'save'; slot: string }
   | { type: 'load'; slot: string; bytes: Uint8Array }
   | { type: 'new'; size: number; seed: number }
-  | { type: 'act'; action: Action };
+  | { type: 'act'; action: Action; strokeId: string; label: string }
+  | { type: 'endstroke' }
+  | { type: 'undo' }
+  | { type: 'redo' };
 
 export type Action =
   | { kind: 'road'; cells: number[] }

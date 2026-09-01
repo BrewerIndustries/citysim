@@ -12,6 +12,7 @@ import { distributePower, type PowerReport } from './power.ts';
 import { stepGrowth, tallyCity, requiredDesirability, type GrowthStats } from './growth.ts';
 import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
 import { updateFireRisk, stepFires } from './fire.ts';
+import { History } from './history.ts';
 
 export const TICKS_PER_MONTH = 8;
 export const ROAD_COST = 10;
@@ -39,6 +40,7 @@ export class City {
   readonly tiles: Tiles;
   /** Per-cell growth reason code — the data behind the Why Panel. */
   readonly reason: Uint8Array;
+  readonly history = new History();
 
   funds = 50_000;
   tax = { r: NEUTRAL_TAX, c: NEUTRAL_TAX, i: NEUTRAL_TAX };
@@ -255,6 +257,38 @@ export class City {
 
   // --- player actions --------------------------------------------------------
 
+  /** Open (or continue) an undo step. Same stroke id = same step. */
+  beginStroke(id: string, label: string): void {
+    this.history.begin(this.tiles, id, label, this.funds);
+  }
+
+  endStroke(): void {
+    this.history.commit(this.tiles, this.funds);
+  }
+
+  undo(): string | null {
+    const r = this.history.undo(this.tiles, this.funds);
+    if (!r) return null;
+    this.funds = r.funds;
+    this.afterHistoryChange();
+    return r.label;
+  }
+
+  redo(): string | null {
+    const r = this.history.redo(this.tiles, this.funds);
+    if (!r) return null;
+    this.funds = r.funds;
+    this.afterHistoryChange();
+    return r.label;
+  }
+
+  /** Roads and civic sources are derived from tiles, so both must be rebuilt. */
+  private afterHistoryChange(): void {
+    this.markRoadsDirty();
+    this.markCivicsDirty();
+    this.stats = tallyCity(this.tiles);
+  }
+
   canAfford(cost: number): boolean { return this.funds >= cost; }
 
   spend(cost: number): boolean {
@@ -266,7 +300,9 @@ export class City {
   buildRoad(i: number): boolean {
     const t = this.tiles;
     if (t.road[i] || t.civic[i]) return false;
-    if (!this.spend(ROAD_COST)) return false;
+    if (!this.canAfford(ROAD_COST)) return false;
+    this.history.touch(t, i);
+    this.spend(ROAD_COST);
     t.road[i] = 1;
     t.zone[i] = 0;
     t.level[i] = 0;
@@ -278,7 +314,9 @@ export class City {
     const t = this.tiles;
     if (t.road[i] || t.civic[i]) return false;
     if (t.zone[i] === zone && t.density[i] === density) return false;
-    if (!this.spend(ZONE_COST)) return false;
+    if (!this.canAfford(ZONE_COST)) return false;
+    this.history.touch(t, i);
+    this.spend(ZONE_COST);
     t.zone[i] = zone;
     t.density[i] = density;
     if (t.level[i] > MAX_LEVEL[density]) t.level[i] = MAX_LEVEL[density];
@@ -308,6 +346,7 @@ export class City {
     for (let y = ay; y < ay + def.size; y++) {
       for (let x = ax; x < ax + def.size; x++) {
         const i = this.grid.index(x, y);
+        this.history.touch(this.tiles, i);
         this.tiles.civic[i] = def.id;
         this.tiles.zone[i] = 0;
         this.tiles.level[i] = 0;
@@ -328,7 +367,9 @@ export class City {
   removeRoad(i: number): boolean {
     const t = this.tiles;
     if (!t.road[i]) return false;
-    if (!this.spend(ROAD_REMOVE_COST)) return false;
+    if (!this.canAfford(ROAD_REMOVE_COST)) return false;
+    this.history.touch(t, i);
+    this.spend(ROAD_REMOVE_COST);
     t.road[i] = 0;
     this.markRoadsDirty();
     return true;
@@ -338,7 +379,9 @@ export class City {
     const t = this.tiles;
     const hadCivic = t.civic[i];
     if (!t.road[i] && !t.zone[i] && !t.level[i] && !hadCivic) return false;
-    if (!this.spend(BULLDOZE_COST)) return false;
+    if (!this.canAfford(BULLDOZE_COST)) return false;
+    this.spend(BULLDOZE_COST);
+    this.history.touch(t, i);
 
     if (hadCivic) {
       // Remove the whole footprint, wherever its anchor is.
@@ -350,7 +393,11 @@ export class City {
         for (let x = Math.max(0, x0 - def.size); x <= x0 + def.size; x++) {
           if (x >= width || y >= this.grid.height) continue;
           const j = this.grid.index(x, y);
-          if (t.civic[j] === hadCivic) { t.civic[j] = 0; t.civicAnchor[j] = 0; }
+          if (t.civic[j] === hadCivic) {
+            this.history.touch(t, j);
+            t.civic[j] = 0;
+            t.civicAnchor[j] = 0;
+          }
         }
       }
       this.markCivicsDirty();

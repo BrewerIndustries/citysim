@@ -41,8 +41,24 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       if (city) self.postMessage({ type: 'inspect', cell: city.inspect(msg.index) });
       break;
     case 'act':
-      if (city) apply(city, msg.action);
+      if (city) {
+        city.beginStroke(msg.strokeId, msg.label);
+        apply(city, msg.action);
+      }
       break;
+    case 'endstroke':
+      if (city) city.endStroke();
+      break;
+    case 'undo': {
+      const label = city?.undo();
+      if (city && label) city.pushMessage(`Undid: ${label}.`);
+      break;
+    }
+    case 'redo': {
+      const label = city?.redo();
+      if (city && label) city.pushMessage(`Redid: ${label}.`);
+      break;
+    }
     case 'save': {
       if (!city) break;
       const bytes = serialize(city);
@@ -117,6 +133,10 @@ function loop(): void {
     firesEnabled: c.firesEnabled,
     firesTotal: c.firesTotal,
     tilesLostToFire: c.tilesLostToFire,
+    canUndo: c.history.canUndo,
+    canRedo: c.history.canRedo,
+    undoLabel: c.history.undoLabel,
+    redoLabel: c.history.redoLabel,
     zone: new Uint8Array(t.zone),
     density: new Uint8Array(t.density),
     road: new Uint8Array(t.road),
