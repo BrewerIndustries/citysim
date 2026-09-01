@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { City } from '../src/sim/city.ts';
+import { City, MESSAGE_TTL } from '../src/sim/city.ts';
 import { ZONE_RES, ZONE_COM, ZONE_IND } from '../src/sim/tiles.ts';
 import { REASON, requiredDesirability } from '../src/sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../src/sim/sim.ts';
+import { anchorFor } from '../src/app/tools.ts';
 
 /** A small city with power, a road spine and zoning either side of it. */
 function buildTestCity(size = 128): City {
@@ -161,4 +162,53 @@ test('a modest starter city can pay for itself', () => {
     `net was ${c.ledger.net.toFixed(0)}/mo`,
   );
   assert.ok(c.funds > 0, `went bankrupt: ${Math.round(c.funds)}`);
+});
+
+test('removing a road leaves zoning and buildings intact', () => {
+  // Bulldoze levels everything on the tile; lifting a road should only lift the road,
+  // so rerouting a street doesn't wipe the neighbourhood beside it.
+  const c = buildTestCity();
+  for (let t = 0; t < 200; t++) c.step();
+  const g = c.grid;
+  const zoned = g.index(30, 38);
+  assert.ok(c.tiles.zone[zoned] > 0 && c.tiles.level[zoned] > 0, 'expected a developed tile');
+
+  const road = g.index(30, 40);
+  assert.equal(c.tiles.road[road], 1);
+  assert.equal(c.removeRoad(road), true);
+  assert.equal(c.tiles.road[road], 0);
+  assert.ok(c.tiles.zone[zoned] > 0, 'zoning beside the road must survive');
+  assert.ok(c.tiles.level[zoned] > 0, 'the building beside the road must survive');
+
+  // And it must not remove anything that isn't a road.
+  assert.equal(c.removeRoad(zoned), false);
+  assert.ok(c.tiles.level[zoned] > 0);
+});
+
+test('ticker messages expire instead of sticking forever', () => {
+  const c = buildTestCity();
+  c.pushMessage('transient complaint');
+  assert.deepEqual(c.activeMessages(), ['transient complaint']);
+  for (let t = 0; t < MESSAGE_TTL + 5; t++) c.step();
+  assert.deepEqual(c.activeMessages(), [], 'a stale message should drop out of the ticker');
+});
+
+test('a centred footprint anchors where the preview is drawn', () => {
+  // Regression: the brush rect was drawn centred on the cursor while placeCivic anchored
+  // at the top-left, so odd/large buildings landed a tile down-right of the highlight.
+  for (const size of [1, 2, 3, 4]) {
+    const a = anchorFor(50, 50, size);
+    const half = (size - 1) >> 1;
+    assert.equal(a.x, 50 - half, `size ${size} anchor x`);
+    assert.equal(a.y, 50 - half, `size ${size} anchor y`);
+  }
+  // And placing at that anchor must occupy the previewed square.
+  const c = new City(128, 1);
+  const a = anchorFor(60, 60, 4);
+  assert.ok(c.placeCivic(c.grid.index(a.x, a.y), 5).ok);
+  for (let y = 59; y <= 62; y++) {
+    for (let x = 59; x <= 62; x++) {
+      assert.equal(c.tiles.civic[c.grid.index(x, y)], 5, `cell ${x},${y} should be inside the plant`);
+    }
+  }
 });

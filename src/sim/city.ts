@@ -16,6 +16,10 @@ export const ROAD_COST = 10;
 export const ROAD_UPKEEP = 0.4;
 export const ZONE_COST = 8;
 export const BULLDOZE_COST = 4;
+/** Lifting a road is cheaper than levelling everything on the tile. */
+export const ROAD_REMOVE_COST = 2;
+/** Ticks a ticker message stays on screen before it expires. */
+export const MESSAGE_TTL = 220;
 
 export interface Ledger {
   taxR: number;
@@ -47,7 +51,7 @@ export class City {
   power: PowerReport = { supply: 0, demand: 0, litCells: 0, unservedCells: 0, brownout: false };
   ledger: Ledger = { taxR: 0, taxC: 0, taxI: 0, upkeepCivic: 0, upkeepRoads: 0, net: 0 };
   bankrupt = false;
-  messages: string[] = [];
+  messages: Array<{ text: string; tick: number }> = [];
 
   private roadsDirty = true;
   private civicsDirty = true;
@@ -138,10 +142,27 @@ export class City {
     }
   }
 
+  /**
+   * Messages carry the tick they were raised on so the ticker can expire them.
+   * Without a timestamp a one-off complaint ("can't build there") sat in the corner
+   * of the screen for the rest of the session.
+   */
   pushMessage(text: string): void {
-    if (this.messages[0] === text) return;
-    this.messages.unshift(text);
+    const head = this.messages[0];
+    if (head && head.text === text) { head.tick = this.tickCount; return; }
+    this.messages.unshift({ text, tick: this.tickCount });
     if (this.messages.length > 40) this.messages.length = 40;
+  }
+
+  /** Messages raised recently enough to still be worth showing. */
+  activeMessages(limit = 3): string[] {
+    const out: string[] = [];
+    for (const m of this.messages) {
+      if (this.tickCount - m.tick > MESSAGE_TTL) break;
+      out.push(m.text);
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 
   /** Population, jobs and nuisance sources are a direct read of what's built. */
@@ -254,6 +275,20 @@ export class City {
     this.markCivicsDirty();
     this.markRoadsDirty();
     return { ok: true };
+  }
+
+  /**
+   * Lift a road without touching anything else on the tile. Bulldoze levels zoning,
+   * buildings and civics too, which is far more than you want when you're just
+   * rerouting a street.
+   */
+  removeRoad(i: number): boolean {
+    const t = this.tiles;
+    if (!t.road[i]) return false;
+    if (!this.spend(ROAD_REMOVE_COST)) return false;
+    t.road[i] = 0;
+    this.markRoadsDirty();
+    return true;
   }
 
   bulldoze(i: number): boolean {

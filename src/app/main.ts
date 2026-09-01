@@ -2,7 +2,7 @@ import './style.css';
 import { Camera } from './camera.ts';
 import { CityRenderer, type Overlay } from './render.ts';
 import { LAYERS, RAMPS, buildLut } from './palette.ts';
-import { TOOLS, DENSITY_LABELS, lineCells, brushCells, type Tool } from './tools.ts';
+import { TOOLS, DENSITY_LABELS, lineCells, brushCells, anchorFor, type Tool } from './tools.ts';
 import { REASON, REASON_TEXT, requiredDesirability } from '../sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { ZONE_LABEL, CIVIC_BY_ID, MAX_LEVEL } from '../sim/tiles.ts';
@@ -92,6 +92,7 @@ function selectTool(t: Tool): void {
   }
   const civicDef = t.civicId ? CIVIC_BY_ID.get(t.civicId) : null;
   brush = t.kind === 'zone' || t.kind === 'bulldoze' ? 3 : civicDef ? civicDef.size : 1;
+  if (t.kind === 'removeroad') brush = 1;
 }
 
 // ---------------------------------------------------------------- chrome
@@ -176,6 +177,22 @@ let lastPan = { x: 0, y: 0 };
 
 function viewSize(): [number, number] { return [canvas.width, canvas.height]; }
 
+/**
+ * Pointer position in CANVAS pixels.
+ *
+ * offsetX/offsetY are relative to whatever the event was dispatched on, which during a
+ * captured drag is not necessarily the canvas, and they ignore any difference between
+ * the element's CSS size and its backing-store size. Deriving from the bounding rect
+ * scales correctly at any devicePixelRatio.
+ */
+function pointerPos(e: PointerEvent | WheelEvent): { x: number; y: number } {
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (canvas.width / r.width),
+    y: (e.clientY - r.top) * (canvas.height / r.height),
+  };
+}
+
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 canvas.addEventListener('pointerdown', (e) => {
@@ -186,10 +203,11 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.button === 2 || e.button === 1 || spaceDown) {
     panning = true;
     canvas.classList.add('panning');
-    lastPan = { x: e.offsetX, y: e.offsetY };
+    lastPan = pointerPos(e);
     return;
   }
-  const cell = camera.cellIndexAt(e.offsetX * dpr(), e.offsetY * dpr(), vw, vh);
+  const q = pointerPos(e);
+  const cell = camera.cellIndexAt(q.x, q.y, vw, vh);
   if (!cell) return;
   dragging = true;
   lastCell = cell;
@@ -199,16 +217,19 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
   const [vw, vh] = viewSize();
   if (panning) {
-    camera.panByPixels((e.offsetX - lastPan.x) * dpr(), (e.offsetY - lastPan.y) * dpr(), vw, vh);
-    lastPan = { x: e.offsetX, y: e.offsetY };
+    const q = pointerPos(e);
+    camera.panByPixels(q.x - lastPan.x, q.y - lastPan.y, vw, vh);
+    lastPan = q;
     return;
   }
-  const cell = camera.cellIndexAt(e.offsetX * dpr(), e.offsetY * dpr(), vw, vh);
+  const cell = camera.cellIndexAt(pointerPos(e).x, pointerPos(e).y, vw, vh);
   hover = cell;
   if (!dragging || !cell || !lastCell) return;
   if (cell.x === lastCell.x && cell.y === lastCell.y) return;
   if (tool.kind === 'road') {
     act({ kind: 'road', cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE) });
+  } else if (tool.kind === 'removeroad') {
+    act({ kind: 'removeroad', cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE) });
   } else {
     applyAt(cell);
   }
@@ -223,7 +244,8 @@ canvas.addEventListener('pointerleave', () => { hover = null; });
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   const [vw, vh] = viewSize();
-  camera.zoomAt(e.deltaY < 0 ? 1 : -1, e.offsetX * dpr(), e.offsetY * dpr(), vw, vh);
+  const q = pointerPos(e);
+  camera.zoomAt(e.deltaY < 0 ? 1 : -1, q.x, q.y, vw, vh);
 }, { passive: false });
 
 function applyAt(cell: { x: number; y: number }): void {
@@ -236,15 +258,24 @@ function applyAt(cell: { x: number; y: number }): void {
     case 'road':
       act({ kind: 'road', cells: [i] });
       break;
+    case 'removeroad':
+      act({ kind: 'removeroad', cells: brushCells(cell.x, cell.y, brush, MAP_SIZE, MAP_SIZE) });
+      break;
     case 'zone':
       act({ kind: 'zone', cells: brushCells(cell.x, cell.y, brush, MAP_SIZE, MAP_SIZE), zone: tool.zone!, density });
       break;
     case 'bulldoze':
       act({ kind: 'bulldoze', cells: brushCells(cell.x, cell.y, brush, MAP_SIZE, MAP_SIZE) });
       break;
-    case 'civic':
-      act({ kind: 'civic', cell: i, civicId: tool.civicId! });
+    case 'civic': {
+      // The preview rect is drawn CENTRED on the cursor, but placeCivic anchors at the
+      // footprint's top-left. Without converting here, a 3x3 school and 4x4 plant landed
+      // a tile down-right of the highlight while 2x2 buildings looked correct — which is
+      // why the misalignment only showed up on some tools.
+      const a = anchorFor(cell.x, cell.y, brush);
+      act({ kind: 'civic', cell: a.y * MAP_SIZE + a.x, civicId: tool.civicId! });
       break;
+    }
   }
 }
 

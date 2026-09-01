@@ -1,7 +1,7 @@
 import { CIVIC_DEFS } from '../sim/tiles.ts';
-import { ROAD_COST, ZONE_COST, BULLDOZE_COST } from '../sim/city.ts';
+import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST } from '../sim/city.ts';
 
-export type ToolKind = 'inspect' | 'road' | 'zone' | 'civic' | 'bulldoze';
+export type ToolKind = 'inspect' | 'road' | 'removeroad' | 'zone' | 'civic' | 'bulldoze';
 
 export interface Tool {
   id: string;
@@ -18,17 +18,18 @@ export interface Tool {
 export const TOOLS: Tool[] = [
   { id: 'inspect', kind: 'inspect', label: 'Inspect', key: '1', cost: 0, group: 'Basics' },
   { id: 'road', kind: 'road', label: 'Road', key: '2', cost: ROAD_COST, colour: '#42464e', group: 'Basics' },
-  { id: 'bulldoze', kind: 'bulldoze', label: 'Bulldoze', key: '3', cost: BULLDOZE_COST, colour: '#8a3f38', group: 'Basics' },
+  { id: 'removeroad', kind: 'removeroad', label: 'Remove road', key: '3', cost: ROAD_REMOVE_COST, colour: '#5c5f68', group: 'Basics' },
+  { id: 'bulldoze', kind: 'bulldoze', label: 'Bulldoze', key: '4', cost: BULLDOZE_COST, colour: '#8a3f38', group: 'Basics' },
 
-  { id: 'zone-r', kind: 'zone', label: 'Residential', key: '4', cost: ZONE_COST, zone: 1, colour: '#6cb46f', group: 'Zoning' },
-  { id: 'zone-c', kind: 'zone', label: 'Commercial', key: '5', cost: ZONE_COST, zone: 2, colour: '#5a9ed0', group: 'Zoning' },
-  { id: 'zone-i', kind: 'zone', label: 'Industrial', key: '6', cost: ZONE_COST, zone: 3, colour: '#c8a45a', group: 'Zoning' },
+  { id: 'zone-r', kind: 'zone', label: 'Residential', key: '5', cost: ZONE_COST, zone: 1, colour: '#6cb46f', group: 'Zoning' },
+  { id: 'zone-c', kind: 'zone', label: 'Commercial', key: '6', cost: ZONE_COST, zone: 2, colour: '#5a9ed0', group: 'Zoning' },
+  { id: 'zone-i', kind: 'zone', label: 'Industrial', key: '7', cost: ZONE_COST, zone: 3, colour: '#c8a45a', group: 'Zoning' },
 
   ...CIVIC_DEFS.map((d, n) => ({
     id: `civic-${d.key}`,
     kind: 'civic' as const,
     label: d.label,
-    key: String(7 + n),
+    key: String(8 + n),
     cost: d.cost,
     civicId: d.id,
     colour: d.colour,
@@ -54,6 +55,12 @@ export function lineCells(
     for (let x = ax + stepX; x !== bx + stepX; x += stepX) cells.push(by * width + x);
   }
   return cells;
+}
+
+/** Top-left cell of a footprint of `size` centred on (cx, cy). */
+export function anchorFor(cx: number, cy: number, size: number): { x: number; y: number } {
+  const half = (size - 1) >> 1;
+  return { x: cx - half, y: cy - half };
 }
 
 /** Square brush footprint clipped to the map. */

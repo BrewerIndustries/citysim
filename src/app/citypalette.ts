@@ -17,19 +17,28 @@ export const ROAD = rgb(66, 70, 78);
 export const ROAD_EDGE = rgb(52, 56, 63);
 export const UNPOWERED = rgb(120, 52, 48);
 export const GRID_LINE = 'rgba(255,255,255,0.05)';
+/** Outline drawn around contiguous developed blocks so built land reads as built. */
+export const DEVELOPED_OUTLINE = 'rgba(255,255,255,0.42)';
 
-/** Empty zoned land: a wash of the land use's hue, so painted zones read immediately. */
+/**
+ * Empty zoned land: a dim wash of the land use's hue, so painted zones read immediately
+ * but stay clearly darker than anything built on them. The first pass made empty lots
+ * nearly as bright as level-1 buildings and you couldn't tell developed land from
+ * land merely painted.
+ */
 export const ZONE_TINT = [
   GROUND,
-  rgb(34, 54, 38),
-  rgb(32, 46, 62),
-  rgb(58, 48, 30),
+  rgb(28, 42, 31),
+  rgb(26, 36, 47),
+  rgb(45, 38, 25),
 ];
 
 /** Building colour ramps by zone: index is level 1..6. */
-const RES = [rgb(52, 92, 58), rgb(66, 116, 70), rgb(84, 142, 84), rgb(108, 168, 100), rgb(138, 192, 120), rgb(176, 214, 150)];
-const COM = [rgb(48, 82, 118), rgb(58, 104, 148), rgb(70, 128, 176), rgb(92, 154, 200), rgb(124, 182, 220), rgb(164, 208, 238)];
-const IND = [rgb(112, 88, 44), rgb(140, 108, 52), rgb(166, 128, 60), rgb(190, 150, 74), rgb(210, 174, 100), rgb(228, 200, 138)];
+// Wider brightness span than the first pass, so level reads at a glance rather than
+// requiring a side-by-side comparison. Level 1 already sits well clear of ZONE_TINT.
+const RES = [rgb(62, 112, 66), rgb(84, 142, 84), rgb(108, 170, 100), rgb(136, 196, 118), rgb(168, 218, 142), rgb(202, 238, 176)];
+const COM = [rgb(54, 96, 138), rgb(70, 126, 174), rgb(92, 156, 202), rgb(120, 184, 224), rgb(154, 208, 240), rgb(190, 228, 250)];
+const IND = [rgb(124, 96, 48), rgb(154, 120, 58), rgb(182, 144, 70), rgb(206, 168, 88), rgb(226, 194, 118), rgb(242, 218, 158)];
 
 export const BUILDING = [null, RES, COM, IND] as const;
 

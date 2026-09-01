@@ -11,7 +11,7 @@
 import type { Camera } from './camera.ts';
 import type { Snapshot } from './protocol.ts';
 import {
-  GROUND, GROUND_ALT, ROAD, UNPOWERED, ZONE_TINT, GRID_LINE,
+  GROUND, GROUND_ALT, ROAD, UNPOWERED, ZONE_TINT, GRID_LINE, DEVELOPED_OUTLINE,
   buildingColour, CIVIC_COLOUR,
 } from './citypalette.ts';
 
@@ -110,7 +110,50 @@ export class CityRenderer {
     ctx.drawImage(this.off, Math.round(origin.x), Math.round(origin.y), r.w * s, r.h * s);
 
     if (s >= 8) this.drawGrid(ctx, cam, r, vw, vh, s);
+    if (s >= 4) this.drawDevelopedOutline(ctx, cam, r, snap, vw, vh, s);
     if (hover) this.drawBrush(ctx, cam, hover, brush, vw, vh, s);
+  }
+
+  /**
+   * Outline contiguous developed land.
+   *
+   * Colour alone was not enough to tell "zoned and built" from "zoned and waiting" at a
+   * glance. Every boundary segment is collected into ONE Path2D and stroked once, so the
+   * cost is proportional to the PERIMETER of built-up areas rather than their area —
+   * per-cell strokeRect calls would be thousands of draws a frame.
+   */
+  private drawDevelopedOutline(
+    ctx: CanvasRenderingContext2D, cam: Camera,
+    r: { x0: number; y0: number; w: number; h: number }, snap: Snapshot,
+    vw: number, vh: number, s: number,
+  ): void {
+    const { level } = snap;
+    const gw = this.gridWidth;
+    const path = new Path2D();
+    const origin = cam.screenOf(r.x0, r.y0, vw, vh);
+    const ox = Math.round(origin.x);
+    const oy = Math.round(origin.y);
+    let segments = 0;
+
+    for (let y = 0; y < r.h; y++) {
+      const gy = r.y0 + y;
+      for (let x = 0; x < r.w; x++) {
+        const gx = r.x0 + x;
+        const i = gy * gw + gx;
+        if (level[i] === 0) continue;
+        const px = ox + x * s;
+        const py = oy + y * s;
+        // Add each edge only from the developed side, so shared borders aren't drawn twice.
+        if (gx === 0 || level[i - 1] === 0) { path.moveTo(px, py); path.lineTo(px, py + s); segments++; }
+        if (gx === gw - 1 || level[i + 1] === 0) { path.moveTo(px + s, py); path.lineTo(px + s, py + s); segments++; }
+        if (gy === 0 || level[i - gw] === 0) { path.moveTo(px, py); path.lineTo(px + s, py); segments++; }
+        if (level[i + gw] === undefined || level[i + gw] === 0) { path.moveTo(px, py + s); path.lineTo(px + s, py + s); segments++; }
+      }
+    }
+    if (!segments) return;
+    ctx.strokeStyle = DEVELOPED_OUTLINE;
+    ctx.lineWidth = s >= 12 ? 1.5 : 1;
+    ctx.stroke(path);
   }
 
   private drawGrid(

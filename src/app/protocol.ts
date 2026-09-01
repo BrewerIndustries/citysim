@@ -50,6 +50,7 @@ export type ToWorker =
 
 export type Action =
   | { kind: 'road'; cells: number[] }
+  | { kind: 'removeroad'; cells: number[] }
   | { kind: 'zone'; cells: number[]; zone: number; density: number }
   | { kind: 'civic'; cell: number; civicId: number }
   | { kind: 'bulldoze'; cells: number[] };

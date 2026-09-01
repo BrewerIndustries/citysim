@@ -45,6 +45,7 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
 function apply(c: City, a: import('./protocol.ts').Action): void {
   switch (a.kind) {
     case 'road': for (const i of a.cells) c.buildRoad(i); break;
+    case 'removeroad': for (const i of a.cells) c.removeRoad(i); break;
     case 'zone': for (const i of a.cells) c.paintZone(i, a.zone, a.density); break;
     case 'bulldoze': for (const i of a.cells) c.bulldoze(i); break;
     case 'civic': {
@@ -81,7 +82,7 @@ function loop(): void {
     type: 'frame',
     tick: c.tick, month: c.month, year: c.year, funds: c.funds,
     demand: c.demand, stats: c.stats, power: c.power, ledger: c.ledger, tax: c.tax,
-    messages: c.messages.slice(0, 6),
+    messages: c.activeMessages(3),
     simMs,
     zone: new Uint8Array(t.zone),
     density: new Uint8Array(t.density),
