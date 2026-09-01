@@ -6,6 +6,7 @@ import { TOOLS, DENSITY_LABELS, lineCells, brushCells, anchorFor, type Tool } fr
 import { REASON, REASON_TEXT, requiredDesirability } from '../sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { ZONE_LABEL, CIVIC_BY_ID, MAX_LEVEL } from '../sim/tiles.ts';
+import { buildManual, type ManualSection } from './manual.ts';
 import type { FromWorker, Snapshot, ToWorker, Action } from './protocol.ts';
 
 const MAP_SIZE = 256;
@@ -168,6 +169,48 @@ function buildTaxes(): void {
   });
 }
 
+// ---------------------------------------------------------------- manual
+const MANUAL: ManualSection[] = buildManual();
+let manualSection = MANUAL[0].id;
+
+function buildManualUi(): void {
+  const nav = $('manual-nav');
+  nav.innerHTML = '';
+  for (const s of MANUAL) {
+    const b = document.createElement('button');
+    b.textContent = s.title;
+    b.dataset.section = s.id;
+    b.onclick = () => showManual(s.id);
+    nav.appendChild(b);
+  }
+  $('manual-open').onclick = () => openManual();
+  $('manual-close').onclick = () => closeManual();
+  $('manual').querySelector('[data-close]')!.addEventListener('click', () => closeManual());
+}
+
+function showManual(id: string): void {
+  manualSection = id;
+  const s = MANUAL.find((x) => x.id === id) ?? MANUAL[0];
+  const content = $('manual-content');
+  content.innerHTML = `<h3>${s.title}</h3>${s.html}`;
+  content.scrollTop = 0;
+  $('manual-nav').querySelectorAll('button').forEach((b) =>
+    b.setAttribute('aria-current', String(b.dataset.section === id)));
+}
+
+function openManual(section = manualSection): void {
+  showManual(section);
+  $('manual').hidden = false;
+}
+
+function closeManual(): void {
+  $('manual').hidden = true;
+}
+
+function manualOpen(): boolean {
+  return !$('manual').hidden;
+}
+
 // ---------------------------------------------------------------- input
 let dragging = false;
 let panning = false;
@@ -281,6 +324,14 @@ function applyAt(cell: { x: number; y: number }): void {
 
 window.addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+  if (e.key === 'Escape' && manualOpen()) { closeManual(); return; }
+  if (e.key === '?' || e.key === 'h' || e.key === 'H') {
+    manualOpen() ? closeManual() : openManual();
+    return;
+  }
+  // While the manual is up it owns the keyboard — otherwise reading the Roads page
+  // silently reassigns your tool.
+  if (manualOpen()) return;
   if (e.code === 'Space') { spaceDown = true; e.preventDefault(); return; }
   const t = TOOLS.find((x) => x.key === e.key);
   if (t) { selectTool(t); return; }
@@ -457,6 +508,7 @@ function frame(): void {
 }
 
 buildTools();
+buildManualUi();
 buildSpeeds();
 buildLayers();
 buildTaxes();

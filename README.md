@@ -74,6 +74,9 @@ Network URLs on startup.)
    all cost upkeep every month, so watch the budget.
 5. **Use Inspect** on any tile to find out exactly why it is or isn't growing.
 
+Press **`?`** for the in-game manual — every tool, zone and building explained, including a
+to-scale diagram of how far a road reaches and how far apart to space streets.
+
 Keys: `1`–`9` tools · `[` `]` speed · `P` pause · scroll to zoom · right-drag or
 space-drag to pan.
 
@@ -89,11 +92,14 @@ space-drag to pan.
   (`LAND_VALUE_TERMS`) and pinned by a test, so the explanation cannot drift from the
   behaviour.
 - **14 data layers** over the city, with infrastructure kept legible underneath.
+- **In-game manual** (`?`) whose every figure is read from the simulation constants rather
+  than written out in prose, and pinned by tests — a manual that quotes hardcoded numbers
+  goes quietly wrong the first time a constant is tuned.
 - **Benchmark harness** — synthetic city generator for any tier, written before any
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 23 tests
+npm test          # 34 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 

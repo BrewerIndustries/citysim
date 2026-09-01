@@ -5,6 +5,7 @@ import { ZONE_RES, ZONE_COM, ZONE_IND } from '../src/sim/tiles.ts';
 import { REASON, requiredDesirability } from '../src/sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../src/sim/sim.ts';
 import { anchorFor } from '../src/app/tools.ts';
+import { ROAD_REACH } from '../src/sim/roads.ts';
 
 /** A small city with power, a road spine and zoning either side of it. */
 function buildTestCity(size = 128): City {
@@ -211,4 +212,42 @@ test('a centred footprint anchors where the preview is drawn', () => {
       assert.equal(c.tiles.civic[c.grid.index(x, y)], 5, `cell ${x},${y} should be inside the plant`);
     }
   }
+});
+
+test('parallel roads 2*ROAD_REACH+1 apart leave no unserved land', () => {
+  // This is the number the manual quotes as the ideal street spacing, so it has to be
+  // measured rather than asserted in prose. A road serves ROAD_REACH tiles each side,
+  // so roads 2*ROAD_REACH+1 apart give contiguous coverage with nothing wasted.
+  const ideal = 2 * ROAD_REACH + 1;
+  const c = new City(128, 1);
+  const g = c.grid;
+  for (let y = 10; y < 118; y++) {
+    c.buildRoad(g.index(40, y));
+    c.buildRoad(g.index(40 + ideal, y));
+  }
+  c.step();
+  for (let y = 20; y < 100; y++) {
+    for (let x = 40; x <= 40 + ideal; x++) {
+      assert.ok(
+        c.tiles.roadDist[g.index(x, y)] <= ROAD_REACH,
+        `cell ${x},${y} is ${c.tiles.roadDist[g.index(x, y)]} from a road, beyond ${ROAD_REACH}`,
+      );
+    }
+  }
+
+  // One tile further apart and a dead strip appears — which is the mistake the manual
+  // is warning against.
+  const d = new City(128, 1);
+  for (let y = 10; y < 118; y++) {
+    d.buildRoad(d.grid.index(40, y));
+    d.buildRoad(d.grid.index(41 + ideal, y));
+  }
+  d.step();
+  let unserved = 0;
+  for (let y = 20; y < 100; y++) {
+    for (let x = 40; x <= 41 + ideal; x++) {
+      if (d.tiles.roadDist[d.grid.index(x, y)] > ROAD_REACH) unserved++;
+    }
+  }
+  assert.ok(unserved > 0, 'spacing one wider than ideal should strand some land');
 });

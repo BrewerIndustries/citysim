@@ -21,6 +21,7 @@
           <div class="rci-labels"><b>R</b><b>C</b><b>I</b></div>
         </div>
         <div class="speeds" id="speeds"></div>
+        <button id="manual-open" class="help" title="Manual (? or H)" aria-label="Open the manual">?</button>
       </header>
 
       <nav id="tools"></nav>
@@ -47,6 +48,21 @@
         </section>
       </aside>
     </div>
+
+    <div id="manual" hidden>
+      <div class="manual-backdrop" data-close></div>
+      <div class="manual-dialog" role="dialog" aria-modal="true" aria-label="Manual">
+        <header>
+          <h1>Manual</h1>
+          <button id="manual-close" aria-label="Close">✕</button>
+        </header>
+        <div class="manual-body">
+          <nav id="manual-nav"></nav>
+          <article id="manual-content"></article>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/app/main.ts"></script>
   </body>
 </html>

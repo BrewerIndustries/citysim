@@ -47,9 +47,9 @@ export function requiredDesirability(level: number): number {
 }
 
 /** Distress accumulated before a building loses a level. */
-const DISTRESS_LIMIT = 40;
+export const DISTRESS_LIMIT = 40;
 /** Below this desirability a developed cell starts to decline. Must be < the growth floor. */
-const DECLINE_BELOW = 3;
+export const DECLINE_BELOW = 3;
 
 export interface GrowthStats {
   population: number;
