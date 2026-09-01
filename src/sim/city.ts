@@ -9,7 +9,7 @@ import { Simulation } from './sim.ts';
 import { Tiles, CIVIC_BY_ID, CIVIC_DEFS, ZONE_RES, ZONE_COM, ZONE_IND, MAX_LEVEL } from './tiles.ts';
 import { recomputeRoadDistance, ROAD_REACH } from './roads.ts';
 import { distributePower, type PowerReport } from './power.ts';
-import { stepGrowth, requiredDesirability, type GrowthStats } from './growth.ts';
+import { stepGrowth, tallyCity, requiredDesirability, type GrowthStats } from './growth.ts';
 import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
 import { updateFireRisk, stepFires } from './fire.ts';
 
@@ -79,6 +79,27 @@ export class City {
   }
 
   get tick(): number { return this.tickCount; }
+  /** Restore the clock when loading a save. */
+  setTick(v: number): void { this.tickCount = v; }
+
+  /**
+   * Run the derived simulation without letting the city change: fields, then power.
+   * Used after loading, where tiles are restored but every field starts at zero — the
+   * staggered coverage passes need ~10 ticks before they've all run at least once.
+   */
+  settleFields(ticks: number): void {
+    for (let n = 0; n < ticks; n++) {
+      if (this.roadsDirty) { recomputeRoadDistance(this.grid, this.tiles, this.queue); this.roadsDirty = false; }
+      if (this.civicsDirty) { this.writeCivicSources(); this.civicsDirty = false; }
+      this.writeGrowthSources();
+      this.sim.step();
+      this.power = distributePower(this.grid, this.tiles, this.queue, this.seen);
+    }
+    updateFireRisk(this.fields, this.tiles);
+    // Populate the census so a freshly loaded city doesn't report zero residents, and
+    // so demand is derived from what's actually standing.
+    this.stats = tallyCity(this.tiles);
+  }
 
   markRoadsDirty(): void { this.roadsDirty = true; }
   markCivicsDirty(): void { this.civicsDirty = true; }

@@ -7,6 +7,7 @@ import { REASON, REASON_TEXT, requiredDesirability } from '../sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { ZONE_LABEL, CIVIC_BY_ID, MAX_LEVEL } from '../sim/tiles.ts';
 import { buildManual, type ManualSection } from './manual.ts';
+import { writeSlot, readSlot, describeSlot, clearSlot } from './storage.ts';
 import type { FromWorker, Snapshot, ToWorker, Action } from './protocol.ts';
 
 const MAP_SIZE = 256;
@@ -144,6 +145,47 @@ function setLayer(i: number): void {
     overlay = { lut: buildLut(RAMPS[l.ramp]), max: l.max, alpha: 0.68 };
     post({ type: 'layer', layer: l.field });
   }
+}
+
+// ---------------------------------------------------------------- saving
+const AUTOSAVE_MONTHS = 4;
+let lastAutosaveMonth = -1;
+let pendingSlot: string | null = null;
+
+function buildSaveUi(): void {
+  $('btn-save').onclick = () => requestSave('manual');
+  $('btn-load').onclick = () => loadSlot('manual');
+  $('btn-new').onclick = () => {
+    if (!confirm('Start a new city? Anything unsaved is lost.')) return;
+    clearSlot('auto');
+    lastAutosaveMonth = -1;
+    post({ type: 'new', size: MAP_SIZE, seed: 1 });
+    note('Started a new city.');
+  };
+  refreshSaveNote();
+}
+
+function requestSave(slot: string): void {
+  pendingSlot = slot;
+  post({ type: 'save', slot });
+}
+
+function loadSlot(slot: string): void {
+  const bytes = readSlot(slot);
+  if (!bytes) { note(`No ${slot} save found.`); return; }
+  post({ type: 'load', slot, bytes });
+}
+
+function note(text: string): void {
+  $('save-note').textContent = text;
+}
+
+function refreshSaveNote(): void {
+  const manual = describeSlot('manual');
+  const auto = describeSlot('auto');
+  note(manual === 'empty' && auto === 'empty'
+    ? 'No saves yet. Autosaves every ' + AUTOSAVE_MONTHS + ' months.'
+    : `Saved: ${manual}\nAuto: ${auto}`);
 }
 
 function buildOptions(): void {
@@ -489,9 +531,28 @@ worker.onmessage = (e: MessageEvent<FromWorker>) => {
   } else if (msg.type === 'frame') {
     snap = msg;
     updateHud(msg);
+    // Autosave on a month boundary rather than a tick count, so the cadence is the same
+    // whatever speed the player is running at.
+    if (msg.month !== lastAutosaveMonth && msg.month % AUTOSAVE_MONTHS === 0 && msg.stats.developedCells > 0) {
+      lastAutosaveMonth = msg.month;
+      if (!pendingSlot) requestSave('auto');
+    }
     if (selected !== null && msg.tick % 8 === 0) post({ type: 'inspect', index: selected });
   } else if (msg.type === 'inspect') {
     renderWhy(msg.cell);
+  } else if (msg.type === 'saved') {
+    const s = snap;
+    const err = writeSlot(msg.slot, msg.bytes, {
+      population: s?.stats.population ?? 0,
+      month: s?.month ?? 0,
+      year: s?.year ?? 0,
+    });
+    if (err) note(err);
+    else if (msg.slot === 'manual') { note('Saved.'); setTimeout(refreshSaveNote, 1400); }
+    else refreshSaveNote();
+    pendingSlot = null;
+  } else if (msg.type === 'notice') {
+    note(msg.text);
   }
 };
 
@@ -521,8 +582,12 @@ buildManualUi();
 buildSpeeds();
 buildLayers();
 buildOptions();
+buildSaveUi();
 buildTaxes();
 fit();
+// Resume the autosave if there is one, so a refresh doesn't cost a city.
 post({ type: 'init', size: MAP_SIZE, seed: 1 });
+const resume = readSlot('auto');
+if (resume) post({ type: 'load', slot: 'auto', bytes: resume });
 setSpeed(1);
 requestAnimationFrame(frame);

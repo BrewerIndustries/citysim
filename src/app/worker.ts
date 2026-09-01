@@ -5,6 +5,7 @@
  * directly, it sends actions (docs/SIMULATION-MODEL.md rule 5).
  */
 import { City } from '../sim/city.ts';
+import { serialize, deserialize } from '../sim/save.ts';
 import type { FieldName } from '../sim/fields.ts';
 import type { ToWorker, Snapshot } from './protocol.ts';
 
@@ -42,8 +43,34 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     case 'act':
       if (city) apply(city, msg.action);
       break;
+    case 'save': {
+      if (!city) break;
+      const bytes = serialize(city);
+      self.postMessage({ type: 'saved', slot: msg.slot, bytes }, [bytes.buffer]);
+      break;
+    }
+    case 'load':
+      try {
+        const loaded = deserialize(msg.bytes);
+        city = loaded.city;
+        self.postMessage({ type: 'ready', width: city.grid.width, height: city.grid.height });
+        if (msg.slot !== 'auto') {
+          city.pushMessage(`Loaded ${city.stats.population.toLocaleString()} residents, ${monthName(city.month)} ${city.year}.`);
+        }
+      } catch (err) {
+        self.postMessage({ type: 'notice', text: `Could not load: ${(err as Error).message}`, error: true });
+      }
+      break;
+    case 'new':
+      city = new City(msg.size, msg.seed);
+      self.postMessage({ type: 'ready', width: city.grid.width, height: city.grid.height });
+      break;
   }
 };
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December'];
+function monthName(m: number): string { return MONTHS[m] ?? ''; }
 
 function apply(c: City, a: import('./protocol.ts').Action): void {
   switch (a.kind) {

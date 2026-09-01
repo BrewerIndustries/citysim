@@ -69,6 +69,33 @@ export function jobsAt(level: number, density: number, zone: number): number {
 }
 
 /**
+ * Count what exists without changing anything.
+ *
+ * stepGrowth() tallies as it goes, so a freshly loaded city reported a population of
+ * zero until its first simulated tick. Loading must not make the city look empty.
+ */
+export function tallyCity(tiles: Tiles): GrowthStats {
+  const { zone, density, level, civic } = tiles;
+  let population = 0;
+  let jobsC = 0;
+  let jobsI = 0;
+  let developedCells = 0;
+  let zonedCells = 0;
+  for (let i = 0; i < zone.length; i++) {
+    const z = zone[i];
+    if (z === 0 || civic[i] !== 0) continue;
+    zonedCells++;
+    const lvl = level[i];
+    if (lvl === 0) continue;
+    developedCells++;
+    if (z === ZONE_RES) population += residentsAt(lvl, density[i]);
+    else if (z === ZONE_COM) jobsC += jobsAt(lvl, density[i], z);
+    else jobsI += jobsAt(lvl, density[i], z);
+  }
+  return { population, jobsC, jobsI, developedCells, zonedCells, abandonedThisTick: 0, grewThisTick: 0 };
+}
+
+/**
  * One growth pass over the whole grid.
  *
  * Reasons are evaluated for every zoned cell (cheap arithmetic, no RNG) but growth is

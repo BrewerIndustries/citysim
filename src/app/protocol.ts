@@ -41,7 +41,10 @@ export interface InspectMsg {
   cell: ReturnType<import('../sim/city.ts').City['inspect']>;
 }
 
-export type FromWorker = Snapshot | ReadyMsg | InspectMsg;
+export interface SavedMsg { type: 'saved'; slot: string; bytes: Uint8Array }
+export interface NoticeMsg { type: 'notice'; text: string; error?: boolean }
+
+export type FromWorker = Snapshot | ReadyMsg | InspectMsg | SavedMsg | NoticeMsg;
 
 export type ToWorker =
   | { type: 'init'; size: number; seed: number }
@@ -50,6 +53,9 @@ export type ToWorker =
   | { type: 'inspect'; index: number }
   | { type: 'tax'; tax: { r: number; c: number; i: number } }
   | { type: 'options'; firesEnabled: boolean }
+  | { type: 'save'; slot: string }
+  | { type: 'load'; slot: string; bytes: Uint8Array }
+  | { type: 'new'; size: number; seed: number }
   | { type: 'act'; action: Action };
 
 export type Action =

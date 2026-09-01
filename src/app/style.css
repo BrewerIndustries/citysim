@@ -153,3 +153,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .toggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer; }
 .toggle input { accent-color: var(--accent); }
 .opt-note { margin: 6px 0 0; font-size: 11.5px; color: var(--dim); }
+
+.rowbtns { display: flex; gap: 4px; }
+.rowbtns button { flex: 1; padding: 5px 0; border-radius: 5px; background: var(--chrome-2);
+  color: var(--dim); font-size: 12px; }
+.rowbtns button:hover { background: #232a36; color: var(--text); }
