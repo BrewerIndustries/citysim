@@ -1,6 +1,6 @@
 # citysim *(working title)*
 
-A SimCity-spirit city builder. Planning phase — no code yet.
+A SimCity-spirit city builder. Simulation spine running; see **Status** below.
 
 ## The one-paragraph pitch
 
@@ -47,6 +47,35 @@ a ¾ view for when you're looking. Offline, single-player, no DRM, no timers.
 - **First slice (S0):** one city tile, the Why Panel working, three data layers, zoning
   that grows and abandons for reasons you can read on screen.
 
+## What runs today
+
+```bash
+npm install
+npm test          # 11 tests: determinism, diffusion shape, scale bounds, no-realloc
+npm run bench     # Tier 1 + Tier 2 simulation benchmark
+npm run dev       # browser field viewer at localhost:5173
+```
+
+- **Simulation core** — 22 field planes, struct-of-arrays over one `ArrayBuffer`, zero
+  allocation per tick. Separable double box blur giving linear falloff to zero at 2r,
+  amplitude-restored and normalised onto a shared 0–255 scale.
+- **Field viewer** — the sim in a Web Worker, 14 data layers, and a working Why readout:
+  click a cell and get an attributed breakdown that sums exactly to the land value.
+- **Benchmark harness** — synthetic city generator for any tier, written before any
+  content, wired into CI as a **gate** rather than a report.
+
+### Measured (M1 Pro, per 100ms tick budget)
+
+| | Grid | Sim cost | Headroom | |
+|---|---|---|---|---|
+| Tier 1 | 512² | 9.8 ms | 10.2× | ✅ ship gate |
+| Tier 2 | 1024² | 45.1 ms | 2.2× | ✅ |
+| Tier 3 | 2048² | 178.4 ms | 0.6× | ❌ needs dirty-chunk updates |
+
+Browser matches Node (10.1 ms vs 9.8 ms at Tier 1), so the Web Worker path costs nothing.
+Tier 3 being over budget is the expected next piece of architectural work, and now it's
+evidence rather than a guess.
+
 ## Status
 
 **Building.** The architectural blockers are settled (intent, stack, scale, simulation
@@ -54,4 +83,8 @@ model). No schedule and no effort estimates — slices are ordered by dependency
 done when it's done. Remaining questions in
 [OPEN-QUESTIONS.md](docs/OPEN-QUESTIONS.md) get answered when they block something.
 
-Local git on `dev`, no remote yet.
+Repo: private, `dev` is the default branch, `main` via PR only.
+CI runs typecheck + tests + build + the Tier 1 benchmark gate on every push.
+GitHub Pages is **disabled** — a private repo on the free plan can't use it — so the web
+demo goes out through itch.io instead. Re-enable the push trigger in
+`.github/workflows/pages.yml` if the repo goes public or the account upgrades.
