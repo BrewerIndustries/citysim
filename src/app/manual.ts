@@ -8,7 +8,7 @@
  */
 import { ROAD_REACH } from '../sim/roads.ts';
 import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, TICKS_PER_MONTH, ROAD_UPKEEP } from '../sim/city.ts';
-import { CIVIC_DEFS, MAX_LEVEL, ZONE_LABEL } from '../sim/tiles.ts';
+import { CIVIC_DEFS, MAX_LEVEL, ZONE_LABEL, ZONE_RES, ZONE_COM, ZONE_IND } from '../sim/tiles.ts';
 import { requirementText } from '../sim/unlocks.ts';
 import { requiredDesirability, REASON_TEXT, DECLINE_BELOW, DISTRESS_LIMIT, SEPTIC_MAX_LEVEL, residentsAt, jobsAt } from '../sim/growth.ts';
 import { POWER, WATER, SEWAGE, UTILITY_REACH, type UtilitySpec } from '../sim/utility.ts';
@@ -18,6 +18,7 @@ import { CELL_METRES } from '../sim/grid.ts';
 import { SHORE_AMENITY } from '../sim/city.ts';
 import { LAYERS, MAX_LAYERS } from './palette.ts';
 import { REMOVE_TARGETS } from './tools.ts';
+import { WASTE_PER_STEP, RECYCLE_MAX_CUT, FREE_DISPOSAL } from '../sim/waste.ts';
 import { SERIES, HISTORY_LIMIT, type SeriesKey } from '../sim/history-series.ts';
 import { MAX_UNDO } from '../sim/history.ts';
 import { AUTOSAVE_MONTHS } from './autosave.ts';
@@ -337,6 +338,49 @@ export function buildManual(): ManualSection[] {
         destroyed</b> for some distance either side — raw discharge is not somewhere
         anyone wants to live. A <b>treatment works</b> costs far more and is nearly clean.</p>
         <p>Both must sit beside open water or on a workable water table, like a pump.</p>`,
+    },
+    {
+      id: 'waste',
+      title: 'Refuse & recycling',
+      html: `
+        <p>Everything the city builds throws something away, and it has to go somewhere.
+        <b>Refuse is not a fourth network</b> — collection is by truck on the roads you have
+        already laid, so there is nothing to draw. What the city needs is capacity: somewhere
+        to put it. The <b>Refuse</b> readout in the top bar is what you produce against what
+        you can dispose of.</p>
+        <p>A village manages without any: the first ${FREE_DISPOSAL} units go in the corner of
+        a field and nobody minds. Past that, if production outruns capacity, refuse piles up
+        in the streets — it pollutes every developed tile, and <b>nothing in the city will
+        grow</b> until you have somewhere to put it. It does not cause abandonment; an
+        overflowing city is unpleasant, not uninhabitable, and the pollution does the rest.</p>
+        <p>Because collection is by truck, <b>where</b> you put a tip makes no difference to
+        what it can take. It makes every difference to the neighbours. That is the whole
+        decision: a landfill is cheap and vile, an incinerator costs far more and is much
+        less foul, and both need power like any other building.</p>
+        ${table(['Building', 'Takes', 'Cost', 'Upkeep', 'Pollution', 'Requires'],
+          CIVIC_DEFS.filter((d) => d.waste).map((d) => [
+            d.label, d.waste!.toLocaleString(), money(d.cost), money(d.upkeep) + ' / mo',
+            d.pollution ? String(d.pollution) : 'none', requirementText(d),
+          ]))}
+        <h4>What each zone throws away</h4>
+        <p>Per level, per density step. Industry is the reason a manufacturing city is
+        expensive to keep clean.</p>
+        ${table(['Zone', 'Refuse'], [
+          ['Residential', String(WASTE_PER_STEP[ZONE_RES])],
+          ['Commercial', String(WASTE_PER_STEP[ZONE_COM])],
+          ['Industrial', String(WASTE_PER_STEP[ZONE_IND])],
+        ])}
+        <h4>Recycling</h4>
+        <p class="tip"><b>Recycling is never required.</b> Nothing is gated behind it and no
+        city needs it to function. What it does is make everything else easier.</p>
+        <p>A recycling centre covers the ground around it and <b>cuts the refuse that ground
+        produces by up to ${Math.round(RECYCLE_MAX_CUT * 100)}%</b> at full coverage. That is a
+        cut at source, so it reduces the tip you need to build as well as the pollution that
+        comes with it — and unlike a landfill it also takes refuse itself.</p>
+        <p>It is the one waste building that <b>raises</b> land value rather than destroying
+        it: recycling coverage is a positive term in land value, so a centre is worth living
+        near. Turn on the <b>Recycling coverage</b> layer to see its reach, and <b>Refuse
+        (raw)</b> to see what your city is actually producing.</p>`,
     },
     {
       id: 'pollution',

@@ -141,6 +141,16 @@ space-drag to pan.
   amenity from every shore tile within 12 — the coastline you built the city for stops
   being worth anything. A treatment works at 9,000 people does the same job cleanly for
   six times the price.
+- **Refuse and recycling** — everything built throws something away, and it has to go
+  somewhere. Deliberately *not* a fourth network: collection is by truck on the roads you
+  already laid, so what the city needs is capacity, not pipes. A village manages on its
+  own; past that, production outrunning disposal means refuse in the streets — pollution
+  on every developed tile and nothing grows until it is dealt with. Since siting does not
+  affect what a tip can take, the only thing placement decides is who has to live near it:
+  a landfill is cheap and vile, an incinerator is expensive and far less foul.
+  **Recycling is never required.** It cuts the waste stream at source by up to 45%, so it
+  shrinks both the tip you need and the pollution that comes with it, and it is the one
+  waste building that *raises* land value rather than destroying it.
 - **Environmental cleanup** — pollution is repairable, not permanent. A cleanup station
   (6,000 people) and a reclamation works (18,000) project remediation over the land and
   pull the pollution field back down, so a district ruined by early industry can be
@@ -161,7 +171,7 @@ space-drag to pan.
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 166 tests
+npm test          # 176 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 

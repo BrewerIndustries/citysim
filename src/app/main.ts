@@ -848,6 +848,12 @@ function updateHud(s: Snapshot): void {
   const sew = $('sewage');
   sew.textContent = `${Math.round(s.sewage.demand)} / ${s.sewage.supply}`;
   sew.classList.toggle('neg', s.sewage.shortfall);
+  const bin = $('waste');
+  bin.textContent = `${Math.round(s.waste.produced)} / ${s.waste.capacity}`;
+  bin.classList.toggle('neg', s.waste.overflow);
+  bin.title = s.waste.recycled > 0
+    ? `${Math.round((s.waste.recycled / Math.max(1, s.waste.produced)) * 100)}% of it recycled`
+    : 'No recycling capacity';
 
   setBar('rci-r', s.demand.r, 'var(--res)');
   setBar('rci-c', s.demand.c, 'var(--com)');

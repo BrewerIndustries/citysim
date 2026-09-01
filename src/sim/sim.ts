@@ -195,6 +195,7 @@ export class Simulation {
     const transit = f.get('transitAccess');
     const school = f.get('schoolCover');
     const police = f.get('policeCover');
+    const recycle = f.get('recycleCover');
     const pollution = f.get('pollution');
     const crime = f.get('crime');
     const w = this.grid.width;
@@ -206,6 +207,7 @@ export class Simulation {
       v += transit[i] * 0.30;
       v += school[i] * 0.20;
       v += police[i] * 0.10;
+      v += recycle[i] * 0.08;
       v -= pollution[i] * 0.55;
       v -= crime[i] * 0.40;
       lv[i] = v < 0 ? 0 : v > 255 ? 255 : v;
@@ -297,6 +299,7 @@ export const LAND_VALUE_TERMS: ReadonlyArray<{ field: string; label: string; wei
   { field: 'transitAccess', label: 'transit access', weight: 0.30 },
   { field: 'schoolCover', label: 'school coverage', weight: 0.20 },
   { field: 'policeCover', label: 'police coverage', weight: 0.10 },
+  { field: 'recycleCover', label: 'recycling', weight: 0.08 },
   { field: 'pollution', label: 'pollution', weight: -0.55 },
   { field: 'crime', label: 'crime', weight: -0.40 },
 ];

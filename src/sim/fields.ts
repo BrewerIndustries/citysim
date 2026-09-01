@@ -22,6 +22,8 @@ export const FIELD_NAMES = [
   'schoolSrc',       // school output
   'transitSrc',      // stop/station output
   'cleanupSrc',      // environmental remediation output
+  'recycleSrc',      // recycling centre output
+  'wasteSrc',        // refuse produced here, after recycling
 
   // --- diffused: spread outward from sources, decay with distance ---
   'pollution',
@@ -31,6 +33,7 @@ export const FIELD_NAMES = [
   'schoolCover',
   'transitAccess',
   'cleanupCover',
+  'recycleCover',
   'amenityAccess',
   'jobAccess',
 
@@ -88,6 +91,10 @@ export const DIFFUSED: ReadonlyArray<{
   // all four every-4 phases were taken, and cleanup coverage only changes when the
   // player builds a station.
   { src: 'cleanupSrc', dst: 'cleanupCover',   radius: 22, decay: 1.0,  norm: 220,  every: 8,  phase: 6 },
+  // Recycling coverage. Also on the eight-tick rota, on phase 4: that is even, so it can
+  // never land on the odd ticks the two every-10 passes use, and like every other pass it
+  // shares its tick with exactly one every-4 pass.
+  { src: 'recycleSrc', dst: 'recycleCover',   radius: 18, decay: 1.0,  norm: 210,  every: 8,  phase: 4 },
   { src: 'jobsC',      dst: 'jobAccess',      radius: 30, decay: 1.0,  norm: 1200, every: 10, phase: 7 },
 ];
 

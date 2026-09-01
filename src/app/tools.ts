@@ -62,6 +62,7 @@ const GROUP_OF: Record<string, string> = {
   solar: 'Power', nuclear: 'Power', fusion: 'Power',
   pump: 'Water', waterworks: 'Water', sewage: 'Water', treatment: 'Water',
   cleanup: 'Environment', reclamation: 'Environment',
+  landfill: 'Refuse', incinerator: 'Refuse', recycling: 'Refuse', recovery: 'Refuse',
   bus: 'Transit', metro: 'Transit', rail: 'Transit',
 };
 

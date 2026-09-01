@@ -58,6 +58,8 @@ export interface CivicDef {
   water?: number;
   /** Sewage a treatment works can process. */
   sewage?: number;
+  /** Refuse a landfill, incinerator or recycling plant can take. */
+  waste?: number;
   /** Kills the waterfront amenity nearby — raw discharge, not a place to walk. */
   foulsWaterfront?: boolean;
   /** Must sit beside open water, or on ground with a workable water table. */
@@ -163,6 +165,26 @@ export const CIVIC_DEFS: CivicDef[] = [
     source: { field: 'cleanupSrc', value: 320 }, colour: '#3f8f68',
     unlock: { population: 18000, requires: ['cleanup'] },
     note: 'Clears a whole district of a century of industry' },
+
+  // --- refuse ----------------------------------------------------------------
+  // Available from the start, because a city with no disposal at all stops growing and
+  // that is not a lesson worth locking behind a population gate. The landfill is cheap,
+  // enormous and vile; everything above it buys its way out of one of those three.
+  { id: 25, key: 'landfill', label: 'Landfill', cost: 1200, upkeep: 45, size: 3,
+    waste: 1400, pollution: 46, colour: '#7d7a52',
+    note: 'Cheap and filthy. Put it downwind of everything' },
+  { id: 26, key: 'incinerator', label: 'Incinerator', cost: 5400, upkeep: 460, size: 3,
+    waste: 5200, pollution: 26, colour: '#8a6a4a',
+    unlock: { population: 7000 },
+    note: 'Takes far more, in a smaller footprint, for less mess' },
+  { id: 27, key: 'recycling', label: 'Recycling centre', cost: 2800, upkeep: 270, size: 3,
+    waste: 900, source: { field: 'recycleSrc', value: 175 }, colour: '#57a86a',
+    unlock: { population: 3500 },
+    note: 'Cuts the waste its neighbourhood makes, and is worth living near' },
+  { id: 28, key: 'recovery', label: 'Materials recovery', cost: 9500, upkeep: 720, size: 4,
+    waste: 3400, source: { field: 'recycleSrc', value: 300 }, colour: '#3f8f52',
+    unlock: { population: 20000, requires: ['recycling'] },
+    note: 'Recycling for a whole district' },
 
   // --- transit ---------------------------------------------------------------
   { id: 6, key: 'bus', label: 'Bus stop', cost: 120, upkeep: 18, size: 1,

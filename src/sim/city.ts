@@ -18,6 +18,9 @@ import { History } from './history.ts';
 import { Terrain, WATER_TABLE_MIN } from './terrain.ts';
 import { lockReason, unlockedIds, type UnlockState } from './unlocks.ts';
 import { ChangeLog } from './dirty.ts';
+import {
+  wasteAt, isOverflowing, OVERFLOW_EMISSION, EMPTY_WASTE, type WasteReport,
+} from './waste.ts';
 import { emptySeries, pushSample, type SeriesData } from './history-series.ts';
 
 export const TICKS_PER_MONTH = 8;
@@ -54,7 +57,7 @@ export const SHORE_AMENITY = 48;
 /** How far a raw sewage outflow spoils the waterfront around it. */
 export const FOUL_REACH = 12;
 /** Source fields written from what the player has built. */
-const GROWTH_SOURCE_FIELDS = ['popR', 'jobsC', 'jobsI', 'emission', 'crimeGen'] as const;
+const GROWTH_SOURCE_FIELDS = ['popR', 'jobsC', 'jobsI', 'emission', 'crimeGen', 'wasteSrc'] as const;
 
 export interface Ledger {
   taxR: number;
@@ -91,6 +94,25 @@ export class City {
   power: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [], unpoweredSources: [] };
   water: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [], unpoweredSources: [] };
   sewage: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [], unpoweredSources: [] };
+  waste: WasteReport = { ...EMPTY_WASTE };
+
+  /**
+   * Running total of what the city throws away, kept incrementally.
+   *
+   * Every cell's contribution is written by `writeSourcesAt`, which only ever runs on
+   * cells that changed — so the total is maintained there rather than by scanning the
+   * grid once a tick for a number that moves one building at a time.
+   */
+  private wasteProduced = 0;
+  /** Whether refuse was piling up last tick, so a change can be noticed. */
+  private wasteOverflow = false;
+  /**
+   * Anchors of the buildings that take refuse, cached because whether each one is
+   * *powered* changes every tick while the list of them changes only when you build.
+   * Scanning the grid for four buildings once a tick is the trap the monthly ledger
+   * already fell into once.
+   */
+  private wasteSites: number[] = [];
   ledger: Ledger = { taxR: 0, taxC: 0, taxI: 0, upkeepCivic: 0, upkeepRoads: 0, net: 0 };
   bankrupt = false;
   /** Sticky: needed by the 'back from the brink' achievement. */
@@ -244,11 +266,12 @@ export class City {
       this.water = this.waterGrid.step(this.grid, this.tiles);
       this.sewage = this.sewageGrid.step(this.grid, this.tiles);
     });
+    this.phase('waste', () => this.accountWaste());
     this.changes.reset();
     this.phase('growth', () => {
       this.stats = stepGrowth(
         this.grid, this.tiles, this.fields, this.demand, this.tickCount, this.reason,
-        this.changes,
+        this.changes, this.wasteOverflow,
       );
     });
     this.phase('fireRisk', () => updateFireRisk(this.fields, this.tiles));
@@ -367,6 +390,16 @@ export class City {
         `Water shortage: demand ${Math.round(this.water.demand)} exceeds supply ${this.water.supply}.`,
         CONDITION_TTL,
       );
+    }
+    if (this.waste.overflow) {
+      this.pushMessage(
+        `Refuse is piling up: ${Math.round(this.waste.produced)} produced against `
+        + `${this.waste.capacity} of disposal. Nothing will grow until it is dealt with.`,
+        CONDITION_TTL,
+      );
+    }
+    for (const site of this.waste.unpoweredSites) {
+      this.pushMessage(`The ${site} has no power, so it is taking nothing.`, CONDITION_TTL);
     }
   }
 
@@ -513,8 +546,11 @@ export class City {
     const jobsI = f.get('jobsI');
     const emission = f.get('emission');
     const crimeGen = f.get('crimeGen');
+    const wasteSrc = f.get('wasteSrc');
 
+    this.wasteProduced -= wasteSrc[i];
     popR[i] = 0; jobsC[i] = 0; jobsI[i] = 0; emission[i] = 0; crimeGen[i] = 0;
+    wasteSrc[i] = 0;
 
     const civicId = civic[i];
     if (civicId) {
@@ -527,6 +563,12 @@ export class City {
     if (lvl === 0) return;
     const z = zone[i];
     const den = density[i];
+    // Recycling cuts the stream before it is ever collected, which is why it reduces
+    // the tip you need as well as the pollution.
+    wasteSrc[i] = wasteAt(z, lvl, den, f.get('recycleCover')[i]);
+    this.wasteProduced += wasteSrc[i];
+    // Refuse that is not being collected sits in the street.
+    const litter = this.wasteOverflow ? lvl * (den + 1) * OVERFLOW_EMISSION : 0;
     // What isn't carried away has to go somewhere. Kept to a nuisance rather than an
     // industrial dose: at 1.6 per level-density a septic street polluted a third as hard
     // as heavy industry and simply demolished itself, which is a punishment, not a
@@ -534,15 +576,15 @@ export class City {
     const septic = this.tiles.sewered[i] ? 0 : lvl * (den + 1) * 0.5;
     if (z === ZONE_RES) {
       popR[i] = lvl * (den + 1) * 6;
-      emission[i] = lvl * 0.4 + septic;
+      emission[i] = lvl * 0.4 + septic + litter;
       crimeGen[i] = 1.5 + lvl * (den + 1) * 0.5;
     } else if (z === ZONE_COM) {
       jobsC[i] = lvl * (den + 1) * 4;
-      emission[i] = lvl * 0.9 + septic;
+      emission[i] = lvl * 0.9 + septic + litter;
       crimeGen[i] = 2 + lvl * (den + 1) * 0.6;
     } else if (z === ZONE_IND) {
       jobsI[i] = lvl * (den + 1) * 5;
-      emission[i] = 8 + lvl * (den + 1) * 3.2 + septic;
+      emission[i] = 8 + lvl * (den + 1) * 3.2 + septic + litter;
       crimeGen[i] = 1.5 + lvl * 0.4;
     }
   }
@@ -550,6 +592,9 @@ export class City {
   /** Population, jobs and nuisance sources are a direct read of what's built. */
   private writeGrowthSources(): void {
     for (const name of GROWTH_SOURCE_FIELDS) this.fields.get(name as never).fill(0);
+    // The fill above bypasses the per-cell bookkeeping in writeSourcesAt, so the running
+    // total has to be zeroed with it or it drifts up every full rebuild.
+    this.wasteProduced = 0;
     const { zone, level, civic } = this.tiles;
     for (let i = 0; i < zone.length; i++) {
       if (level[i] === 0 && civic[i] === 0) continue;
@@ -587,6 +632,12 @@ export class City {
         }
       }
     }
+    this.wasteSites = [];
+    for (let i = 0; i < this.tiles.civic.length; i++) {
+      if (!this.tiles.civicAnchor[i]) continue;
+      if (CIVIC_BY_ID.get(this.tiles.civic[i])?.waste) this.wasteSites.push(i);
+    }
+
     // Civic sources changed wholesale; the affected fields are cheap and rarely touched.
     for (const def of CIVIC_DEFS) if (def.source) this.sim.markSourceAll(def.source.field);
     const { civic, civicAnchor } = this.tiles;
@@ -830,6 +881,50 @@ export class City {
     this.roadCells--;
     this.markRoadsDirty();
     return true;
+  }
+
+  /**
+   * Total up disposal capacity and compare it with what the city throws away.
+   *
+   * There is no network to walk: trucks use the roads. So this is a sum over the
+   * disposal buildings, which is why it reads the cached anchor list rather than the
+   * grid. A site with no power takes nothing — the compactors and sorting lines do not
+   * run on goodwill — and is named rather than silently counted, the same lesson the
+   * pumps taught.
+   */
+  private accountWaste(): void {
+    const t = this.tiles;
+    let capacity = 0;
+    let recycling = 0;
+    const unpoweredSites: string[] = [];
+    for (const i of this.wasteSites) {
+      const def = CIVIC_BY_ID.get(t.civic[i]);
+      if (!def?.waste) continue;
+      if (!t.powered[i]) {
+        if (unpoweredSites.length < 3) {
+          unpoweredSites.push(`${def.label} at ${i & (this.grid.width - 1)}, ${i >>> this.grid.shift}`);
+        }
+        continue;
+      }
+      capacity += def.waste;
+      if (def.source?.field === 'recycleSrc') recycling += def.waste;
+    }
+
+    const produced = this.wasteProduced;
+    const overflow = isOverflowing(produced, capacity);
+    this.waste = {
+      produced, capacity, overflow,
+      recycled: Math.min(recycling, produced),
+      unpoweredSites,
+    };
+
+    // Refuse in the street is written by the source pass, which only visits cells that
+    // changed — so the tick the overflow starts or stops, every developed cell needs
+    // rewriting. It flips rarely, which is what makes a full rebuild affordable here.
+    if (overflow !== this.wasteOverflow) {
+      this.wasteOverflow = overflow;
+      this.sourcesAllDirty = true;
+    }
   }
 
   /** A pump works beside open water, or on ground with enough underground water. */

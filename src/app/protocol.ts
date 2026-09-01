@@ -16,6 +16,7 @@ export interface Snapshot {
   power: UtilityReport;
   water: UtilityReport;
   sewage: UtilityReport;
+  waste: import('../sim/waste.ts').WasteReport;
   ledger: Ledger;
   tax: { r: number; c: number; i: number };
   messages: string[];

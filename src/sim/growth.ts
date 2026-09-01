@@ -24,6 +24,7 @@ export const REASON = {
   UNZONED: 7,
   NO_WATER: 8,
   NO_SEWER: 9,
+  REFUSE: 10,
 } as const;
 
 export const REASON_TEXT: Record<number, string> = {
@@ -37,6 +38,7 @@ export const REASON_TEXT: Record<number, string> = {
   7: 'not zoned',
   8: 'no water',
   9: 'on septic — cannot grow further without a sewer',
+  10: 'refuse is piling up citywide — nowhere to put any more',
 };
 
 /**
@@ -120,6 +122,14 @@ export function tallyCity(tiles: Tiles): GrowthStats {
 export function stepGrowth(
   grid: Grid, tiles: Tiles, fields: Fields, demand: Demand, tick: number, reason: Uint8Array,
   changes: ChangeLog,
+  /**
+   * True when the city throws away more than it can dispose of. Unlike the other gates
+   * this one is citywide, because the disposal it is short of is citywide: a landfill
+   * three districts away serves you exactly as well as one next door, since collection
+   * is by truck. It stops growth without causing abandonment — an overflowing city is
+   * unpleasant, not uninhabitable, and the pollution it produces does the rest.
+   */
+  wasteOverflow = false,
 ): GrowthStats {
   const { zone, density, level, roadDist, powered, watered, sewered, distress, civic } = tiles;
   const dR = fields.get('desirabilityR');
@@ -187,6 +197,7 @@ export function stepGrowth(
     if (!hasWater) { reason[i] = REASON.NO_WATER; continue; }
     if (lvl >= max) { reason[i] = REASON.AT_CAPACITY; continue; }
     if (!hasSewer && lvl >= SEPTIC_MAX_LEVEL) { reason[i] = REASON.NO_SEWER; continue; }
+    if (wasteOverflow) { reason[i] = REASON.REFUSE; continue; }
     if (wants <= 0.02) { reason[i] = REASON.NO_DEMAND; continue; }
     if (des < requiredDesirability(lvl)) { reason[i] = REASON.LOW_DESIRABILITY; continue; }
 

@@ -169,7 +169,7 @@ function loop(): void {
   const snap: Snapshot = {
     type: 'frame',
     tick: c.tick, month: c.month, year: c.year, funds: c.funds,
-    demand: c.demand, stats: c.stats, power: c.power, water: c.water, sewage: c.sewage, ledger: c.ledger, tax: c.tax,
+    demand: c.demand, stats: c.stats, power: c.power, water: c.water, sewage: c.sewage, waste: c.waste, ledger: c.ledger, tax: c.tax,
     messages: c.activeMessages(3),
     simMs,
     disasters: { ...c.disasters },

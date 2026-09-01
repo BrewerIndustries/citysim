@@ -51,10 +51,12 @@ export const LAYERS: ReadonlyArray<{
   { field: 'schoolCover', label: 'School coverage', ramp: 'coverage', max: 255, key: [196, 128, 244] },
   { field: 'transitAccess', label: 'Transit access', ramp: 'coverage', max: 255, key: [88, 216, 200] },
   { field: 'cleanupCover', label: 'Cleanup coverage', ramp: 'coverage', max: 255, key: [96, 220, 150] },
+  { field: 'recycleCover', label: 'Recycling coverage', ramp: 'coverage', max: 255, key: [120, 232, 168] },
   { field: 'amenityAccess', label: 'Amenity access', ramp: 'coverage', max: 255, key: [152, 224, 108] },
   { field: 'jobAccess', label: 'Job access', ramp: 'coverage', max: 255, key: [224, 196, 84] },
   { field: 'popR', label: 'Residents (raw)', ramp: 'source', max: 30, key: [208, 208, 216] },
   { field: 'emission', label: 'Emissions (raw)', ramp: 'source', max: 70, key: [200, 128, 96] },
+  { field: 'wasteSrc', label: 'Refuse (raw)', ramp: 'source', max: 40, key: [180, 172, 130] },
 ];
 
 /** Build a 256-entry RGBA lookup table so the hot pixel loop is a single array read. */
