@@ -7,6 +7,7 @@
  */
 
 import { CIVIC_DEFS } from '../sim/tiles.ts';
+import { ROAD_CLASSES } from '../sim/roads.ts';
 
 /** Little-endian 0xAABBGGRR, written straight into a Uint32 view of ImageData. */
 export function rgb(r: number, g: number, b: number): number {
@@ -91,6 +92,13 @@ export function parseHex(hex: string): number {
  * colour and were simply invisible on the map once placed. Deriving it means a new
  * building cannot be forgotten.
  */
+/**
+ * One colour per road class, so the network's hierarchy is legible at a glance without
+ * turning a layer on. Derived from ROAD_CLASSES so a new class cannot render as nothing.
+ */
+export const ROAD_COLOUR: Record<number, number> =
+  Object.fromEntries(ROAD_CLASSES.map((c) => [c.id, parseHex(c.colour)]));
+
 export const CIVIC_COLOUR: Record<number, number> = Object.fromEntries(
   CIVIC_DEFS.map((d) => [d.id, parseHex(d.colour)]),
 );

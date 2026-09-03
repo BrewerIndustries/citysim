@@ -19,6 +19,8 @@ import { SHORE_AMENITY } from '../sim/city.ts';
 import { LAYERS, MAX_LAYERS } from './palette.ts';
 import { REMOVE_TARGETS } from './tools.ts';
 import { WORLD_WORKS, siblingOf } from '../sim/works.ts';
+import { ROAD_CLASSES } from '../sim/roads.ts';
+import { TRIPS_PER_STEP } from '../sim/traffic.ts';
 import { WASTE_PER_STEP, RECYCLE_MAX_CUT, FREE_DISPOSAL } from '../sim/waste.ts';
 import { SERIES, HISTORY_LIMIT, type SeriesKey } from '../sim/history-series.ts';
 import { MAX_UNDO } from '../sim/history.ts';
@@ -167,8 +169,43 @@ export function buildManual(): ManualSection[] {
         <p>Roads carry traffic and nothing else — <b>power, water and sewage are networks you
         lay yourself</b>, along the same streets. A district on the road network is not
         automatically on any of the others.</p>
+        <h4>Four widths</h4>
+        <p>A road is not just a road. Cost and upkeep climb faster than capacity does, so
+        paving everything wide is a way to go bankrupt rather than a way to win — and the
+        top of the ladder is not simply a better street:</p>
+        <p class="tip"><b>Nothing can be built off a motorway.</b> No property fronts onto
+        one, so a motorway carries traffic and grants no access at all. It has to be fed by
+        arterials, which is exactly the planning problem a real city has.</p>
+        ${table(['Road', 'Lanes', 'Cost', 'Upkeep', 'Carries', 'Frontage'],
+          ROAD_CLASSES.map((c) => [
+            c.label, String(c.lanes), money(c.cost) + ' / tile', money(c.upkeep) + ' / mo',
+            String(c.capacity), c.frontage ? 'yes' : '<b>no</b>',
+          ]))}
+        <p>Drawing a wider road over one you already have <b>upgrades it</b> for the
+        difference in price, so a street becomes an avenue without bulldozing the corridor
+        and losing everything fronting onto it. Drawing a narrower one downgrades it for
+        free.</p>
+        <h4>Traffic</h4>
+        <p>Every developed tile generates trips and hands them to the nearest road it could
+        pull out onto. Load then spreads a few tiles along the network, pulled towards
+        whatever has spare capacity — which is why a wide road <i>relieves</i> the streets
+        feeding it rather than just sitting beside them, and why a motorway with no frontage
+        of its own is still worth building.</p>
+        ${table(['Zone', 'Trips'], [
+          ['Residential', String(TRIPS_PER_STEP[ZONE_RES])],
+          ['Commercial', String(TRIPS_PER_STEP[ZONE_COM])],
+          ['Industrial', String(TRIPS_PER_STEP[ZONE_IND])],
+        ])}
+        <p>Per level, per density step. Commerce generates most per unit of building —
+        every customer is a trip — which is why a strip of shops on a two-lane street
+        snarls long before the housing behind it does.</p>
+        <p>A road carrying more than it can hold is <b>congested</b>, and congestion is a
+        negative term in land value for the few tiles either side of it. Turn on the
+        <b>Traffic</b> layer to see where, and <b>Road load</b> to see what each tile is
+        actually carrying. Nothing here is routed: no vehicle is ever tracked from an
+        origin to a destination, because that is the calculation that has sunk every game
+        that tried it.</p>
         ${table(['Action', 'Cost', 'What it does'], [
-          ['Road', money(ROAD_COST) + ' / tile', 'Lay a street. Drag to draw a line.'],
           ['Remove', money(ROAD_REMOVE_COST) + ' / tile',
             'Lifts roads and utilities. Zoning and buildings stay.'],
           ['Bulldoze', money(BULLDOZE_COST) + ' / tile', 'Clears everything on the tile — road, zoning, buildings.'],
@@ -183,8 +220,8 @@ export function buildManual(): ManualSection[] {
         — and it will touch nothing else. That is how you pull a sewer out from under a
         street you want to keep.</p>
         ${table(['Target', 'Removes'], REMOVE_TARGETS.map((r) => [r.label, r.hint]))}
-        <p>Roads cost ${money(ROAD_UPKEEP)} per tile per month to maintain, so a sprawling
-        network is a permanent drain. This is the main reason not to over-build streets.</p>`,
+        <p>Roads cost upkeep every month whatever their width, so a sprawling network is a
+        permanent drain. This is the main reason not to over-build streets.</p>`,
     },
     {
       id: 'terrain',

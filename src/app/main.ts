@@ -11,6 +11,7 @@ import { REASON, REASON_TEXT, requiredDesirability } from '../sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { ZONE_LABEL, CIVIC_BY_ID, MAX_LEVEL } from '../sim/tiles.ts';
 import type { RemoveTarget } from '../sim/city.ts';
+import { DEFAULT_ROAD_CLASS } from '../sim/roads.ts';
 import { buildManual, type ManualSection } from './manual.ts';
 import { writeSlot, readSlot, describeSlot, clearSlot } from './storage.ts';
 import { Chart } from './chart.ts';
@@ -92,6 +93,11 @@ const act = (a: Action) => post({ type: 'act', action: a, strokeId, label: undoL
  * its own tells you nothing a month later — which of the five things it removes did it
  * take? — so the target is folded in.
  */
+/** The class a road tool lays. Defaults to a street so a missing id cannot lay nothing. */
+function roadClassOf(t: Tool): number {
+  return t.roadClass ?? DEFAULT_ROAD_CLASS;
+}
+
 function undoLabel(): string {
   if (tool.kind !== 'remove' || removeTarget === 'all') return tool.label;
   const t = REMOVE_TARGETS.find((r) => r.target === removeTarget);
@@ -698,7 +704,10 @@ forEachCanvas((el) => el.addEventListener('pointermove', (e) => {
   }
 
   if (tool.kind === 'road') {
-    act({ kind: 'road', cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE) });
+    act({
+      kind: 'road', roadClass: roadClassOf(tool),
+      cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE),
+    });
   } else if (tool.kind === 'powerline' || tool.kind === 'pipe' || tool.kind === 'sewer') {
     act({
       kind: 'utility',
@@ -758,7 +767,7 @@ function commitPreview(): void {
   const cells = preview;
   if (!cells.length) return;
   switch (tool.kind) {
-    case 'road': act({ kind: 'road', cells }); break;
+    case 'road': act({ kind: 'road', cells, roadClass: roadClassOf(tool) }); break;
     case 'remove': act({ kind: 'remove', cells, target: removeTarget }); break;
     case 'bulldoze': act({ kind: 'bulldoze', cells }); break;
     case 'zone': act({ kind: 'zone', cells, zone: tool.zone!, density }); break;
@@ -777,7 +786,7 @@ function applyAt(cell: { x: number; y: number }): void {
       post({ type: 'inspect', index: i });
       break;
     case 'road':
-      act({ kind: 'road', cells: [i] });
+      act({ kind: 'road', cells: [i], roadClass: roadClassOf(tool) });
       break;
     case 'remove':
       act({
@@ -894,6 +903,14 @@ function updateHud(s: Snapshot): void {
   const bin = $('waste');
   bin.textContent = `${Math.round(s.waste.produced)} / ${s.waste.capacity}`;
   bin.classList.toggle('neg', s.waste.overflow);
+  const car = $('traffic');
+  const share = s.traffic.roadTiles === 0 ? 0
+    : Math.round((s.traffic.congestedTiles / s.traffic.roadTiles) * 100);
+  car.textContent = s.traffic.roadTiles === 0 ? '—' : `${share}% jammed`;
+  car.classList.toggle('neg', share >= 10);
+  car.title = `${Math.round(s.traffic.trips)} trips per tick · `
+    + `${s.traffic.congestedTiles} of ${s.traffic.roadTiles} road tiles over capacity · `
+    + `worst ${(s.traffic.worst * 100).toFixed(0)}% of capacity`;
   bin.title = s.waste.recycled > 0
     ? `${Math.round((s.waste.recycled / Math.max(1, s.waste.produced)) * 100)}% of it recycled`
     : 'No recycling capacity';

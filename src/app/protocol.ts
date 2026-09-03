@@ -16,6 +16,7 @@ export interface Snapshot {
   power: UtilityReport;
   water: UtilityReport;
   sewage: UtilityReport;
+  traffic: import('../sim/traffic.ts').TrafficReport;
   waste: import('../sim/waste.ts').WasteReport;
   ledger: Ledger;
   tax: { r: number; c: number; i: number };
@@ -37,6 +38,7 @@ export interface Snapshot {
   zone: Uint8Array;
   density: Uint8Array;
   road: Uint8Array;
+  roadClass: Uint8Array;
   powerLine: Uint8Array;
   pipe: Uint8Array;
   sewer: Uint8Array;
@@ -92,7 +94,7 @@ export type ToWorker =
   | { type: 'redo' };
 
 export type Action =
-  | { kind: 'road'; cells: number[] }
+  | { kind: 'road'; cells: number[]; roadClass: number }
   | { kind: 'remove'; cells: number[]; target: import('../sim/city.ts').RemoveTarget }
   | { kind: 'utility'; cells: number[]; utility: 'powerLine' | 'pipe' | 'sewer' }
   | { kind: 'zone'; cells: number[]; zone: number; density: number }

@@ -7,7 +7,12 @@ import { Rng } from './rng.ts';
 import { Fields } from './fields.ts';
 import { Simulation, LAND_VALUE_BASE } from './sim.ts';
 import { Tiles, CIVIC_BY_ID, CIVIC_DEFS, ZONE_RES, ZONE_COM, ZONE_IND, MAX_LEVEL } from './tiles.ts';
-import { recomputeRoadDistance, ROAD_REACH } from './roads.ts';
+import {
+  recomputeRoadDistance, ROAD_REACH, ROAD_CLASS_BY_ID, DEFAULT_ROAD_CLASS,
+} from './roads.ts';
+import {
+  stepTraffic, recomputeNearestRoad, listRoads, EMPTY_TRAFFIC, type TrafficReport,
+} from './traffic.ts';
 import { UtilityGrid, POWER, WATER, SEWAGE, type UtilityReport } from './utility.ts';
 import { stepGrowth, tallyCity, requiredDesirability, type GrowthStats } from './growth.ts';
 import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
@@ -53,6 +58,12 @@ export const MESSAGE_TTL = 220;
  * told the pump has no pipe is worse than not being told at all.
  */
 export const CONDITION_TTL = 20;
+
+/**
+ * Ticks between traffic recomputations. Four, so it lands on the same rota as the
+ * coverage fields and always has fresh numbers ready for the every-eight congestion pass.
+ */
+export const TRAFFIC_EVERY = 4;
 /** Amenity value of a waterfront tile. Below a park's, but it runs the whole coast. */
 export const SHORE_AMENITY = 48;
 /** How far a raw sewage outflow spoils the waterfront around it. */
@@ -96,6 +107,15 @@ export class City {
   water: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [], unpoweredSources: [] };
   sewage: UtilityReport = { supply: 0, demand: 0, servedCells: 0, unservedCells: 0, shortfall: false, isolatedSources: [], unpoweredSources: [] };
   waste: WasteReport = { ...EMPTY_WASTE };
+  traffic: TrafficReport = { ...EMPTY_TRAFFIC };
+
+  /** Scratch for the traffic pass, allocated once so a tick allocates nothing. */
+  private trafficLoad!: Float32Array;
+  private trafficNext!: Float32Array;
+  private nearestRoad!: Int32Array;
+  /** Compacted road indices, rebuilt with the distance field rather than every tick. */
+  private roadList!: Int32Array;
+  private roadListCount = 0;
 
   /**
    * What the world works currently STANDING do for the city.
@@ -168,6 +188,14 @@ export class City {
   /** Maintained as things are built, so the monthly ledger needs no full-grid scan. */
   private sourceRegions: import('./dirty.ts').DirtyRegion[] | undefined;
   private roadCells = 0;
+  /**
+   * Summed per road tile from its class, not roadCells times one constant.
+   *
+   * Maintained incrementally alongside roadCells. It has to be: `recountUpkeep` only
+   * runs on a load or an undo, so a counter that is only correct there drifts from the
+   * live city and a reloaded save stops matching the one it was saved from.
+   */
+  private roadUpkeep = 0;
   private readonly utilityCells: Record<UtilityKind, number> = { powerLine: 0, pipe: 0, sewer: 0 };
   private civicUpkeep = 0;
   private tickCount = 0;
@@ -183,6 +211,10 @@ export class City {
     this.terrain = new Terrain(this.grid, mapSeed);
     this.refreshUnlocks();
     this.queue = new Int32Array(this.grid.size);
+    this.trafficLoad = new Float32Array(this.grid.size);
+    this.trafficNext = new Float32Array(this.grid.size);
+    this.nearestRoad = new Int32Array(this.grid.size);
+    this.roadList = new Int32Array(this.grid.size);
     this.powerGrid = new UtilityGrid(this.grid.size, POWER, this.grid.width);
     this.waterGrid = new UtilityGrid(this.grid.size, WATER, this.grid.width);
     this.sewageGrid = new UtilityGrid(this.grid.size, SEWAGE, this.grid.width);
@@ -201,19 +233,24 @@ export class City {
   /** Rebuild the incremental ledger counters from scratch. */
   recountUpkeep(): void {
     const { road, powerLine, pipe, sewer, civic, civicAnchor } = this.tiles;
+    let roadUpkeep = 0;
     let roads = 0;
     let upkeep = 0;
     this.utilityCells.powerLine = 0;
     this.utilityCells.pipe = 0;
     this.utilityCells.sewer = 0;
     for (let i = 0; i < road.length; i++) {
-      if (road[i]) roads++;
+      if (road[i]) {
+        roads++;
+        roadUpkeep += ROAD_CLASS_BY_ID.get(this.tiles.roadClass[i])?.upkeep ?? ROAD_UPKEEP;
+      }
       if (powerLine[i]) this.utilityCells.powerLine++;
       if (pipe[i]) this.utilityCells.pipe++;
       if (sewer[i]) this.utilityCells.sewer++;
       if (civicAnchor[i]) upkeep += CIVIC_BY_ID.get(civic[i])?.upkeep ?? 0;
     }
     this.roadCells = roads;
+    this.roadUpkeep = roadUpkeep;
     this.civicUpkeep = upkeep;
   }
 
@@ -264,6 +301,10 @@ export class City {
     if (this.profiling) this.profile = {};
     if (this.roadsDirty) {
       recomputeRoadDistance(this.grid, this.tiles, this.queue);
+      // Which road each cell pulls out onto only changes when the network does, so it
+      // rides along with the distance field rather than being redone every tick.
+      recomputeNearestRoad(this.grid, this.tiles, this.nearestRoad, this.queue);
+      this.roadListCount = listRoads(this.grid, this.tiles, this.roadList);
       this.roadsDirty = false;
     }
     if (this.civicsDirty) {
@@ -279,6 +320,19 @@ export class City {
       this.sewage = this.sewageGrid.step(this.grid, this.tiles);
     });
     this.phase('waste', () => this.accountWaste());
+    // Traffic is a slow aggregate — buildings grow over months, not ticks — and the only
+    // thing that reads it is a diffusion pass on the eight-tick rota. Recomputing it
+    // every tick cost 5ms for a number nothing looked at in between.
+    if (this.tickCount % TRAFFIC_EVERY === 0) {
+      this.phase('traffic', () => {
+        this.traffic = stepTraffic(
+          this.grid, this.tiles, this.trafficLoad, this.trafficNext,
+          this.fields.get('congestSrc'), this.nearestRoad,
+          this.roadList, this.roadListCount,
+        );
+        this.sim.markSourceAll('congestSrc');
+      });
+    }
     this.changes.reset();
     this.phase('growth', () => {
       this.stats = stepGrowth(
@@ -336,7 +390,7 @@ export class City {
     // Counted incrementally as things are built and demolished. Two full-grid scans a
     // month cost 35ms a tick at Tier 3 for numbers that change by one at a time.
     l.upkeepCivic = this.civicUpkeep;
-    l.upkeepRoads = this.roadCells * ROAD_UPKEEP
+    l.upkeepRoads = this.roadUpkeep
       + (this.utilityCells.powerLine + this.utilityCells.pipe + this.utilityCells.sewer) * LINE_UPKEEP;
     l.net = l.taxR + l.taxC + l.taxI - l.upkeepCivic - l.upkeepRoads;
 
@@ -720,6 +774,9 @@ export class City {
   /** Land value every tile starts from, including whatever the world works add. */
   get landValueBase(): number { return LAND_VALUE_BASE + this.worksEffects.landValue; }
 
+  /** Road upkeep as the ledger will charge it. Exposed so tests can pin the counter. */
+  get ledgerRoadUpkeep(): number { return this.roadUpkeep; }
+
   canAfford(cost: number): boolean { return this.funds >= cost; }
 
   spend(cost: number): boolean {
@@ -728,16 +785,36 @@ export class City {
     return true;
   }
 
-  buildRoad(i: number): boolean {
+  /**
+   * Lay a road, or change the class of one already there.
+   *
+   * Drawing a wider class over an existing road UPGRADES it for the difference in cost,
+   * which is how a street becomes an avenue without bulldozing the corridor and losing
+   * everything fronting onto it. Drawing a narrower one downgrades for free — you are
+   * not owed a refund for taking lanes away, but you should be allowed to.
+   */
+  buildRoad(i: number, cls: number = DEFAULT_ROAD_CLASS): boolean {
     const t = this.tiles;
-    if (t.road[i] || t.civic[i] || this.terrain.water[i]) return false;
-    if (!this.canAfford(ROAD_COST)) return false;
+    const def = ROAD_CLASS_BY_ID.get(cls);
+    if (!def) return false;
+    if (t.civic[i] || this.terrain.water[i]) return false;
+    if (t.road[i] && t.roadClass[i] === cls) return false;
+
+    const existing = t.road[i] ? (ROAD_CLASS_BY_ID.get(t.roadClass[i])?.cost ?? 0) : 0;
+    const price = Math.max(0, def.cost - existing);
+    if (!this.canAfford(price)) return false;
     this.history.touch(t, i);
-    this.spend(ROAD_COST);
-    t.road[i] = 1;
+    this.spend(price);
+    if (!t.road[i]) {
+      t.road[i] = 1;
+      this.roadCells++;
+    } else {
+      this.roadUpkeep -= ROAD_CLASS_BY_ID.get(t.roadClass[i])?.upkeep ?? 0;
+    }
+    this.roadUpkeep += def.upkeep;
+    t.roadClass[i] = cls;
     t.zone[i] = 0;
     t.level[i] = 0;
-    this.roadCells++;
     this.recordChange(i);
     this.markRoadsDirty();
     return true;
@@ -918,7 +995,9 @@ export class City {
     if (!this.canAfford(ROAD_REMOVE_COST)) return false;
     this.history.touch(t, i);
     this.spend(ROAD_REMOVE_COST);
+    this.roadUpkeep -= ROAD_CLASS_BY_ID.get(t.roadClass[i])?.upkeep ?? 0;
     t.road[i] = 0;
+    t.roadClass[i] = 0;
     this.roadCells--;
     this.markRoadsDirty();
     return true;
@@ -1014,7 +1093,12 @@ export class City {
       }
       this.markCivicsDirty();
     }
-    if (t.road[i]) { this.roadCells--; this.markRoadsDirty(); }
+    if (t.road[i]) {
+      this.roadUpkeep -= ROAD_CLASS_BY_ID.get(t.roadClass[i])?.upkeep ?? 0;
+      t.roadClass[i] = 0;
+      this.roadCells--;
+      this.markRoadsDirty();
+    }
     if (t.powerLine[i]) { this.utilityCells.powerLine--; this.markUtilitiesDirty(); }
     if (t.pipe[i]) { this.utilityCells.pipe--; this.markUtilitiesDirty(); }
     if (t.sewer[i]) { this.utilityCells.sewer--; this.markUtilitiesDirty(); }

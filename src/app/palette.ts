@@ -42,6 +42,8 @@ export const LAYERS: ReadonlyArray<{
   { field: 'desirabilityR', label: 'Desirability — residential', ramp: 'value', max: 120, key: [110, 208, 130] },
   { field: 'desirabilityC', label: 'Desirability — commercial', ramp: 'value', max: 120, key: [92, 172, 246] },
   { field: 'desirabilityI', label: 'Desirability — industrial', ramp: 'value', max: 200, key: [240, 176, 92] },
+  { field: 'congestion', label: 'Traffic', ramp: 'nuisance', max: 255, key: [244, 96, 76] },
+  { field: 'congestSrc', label: 'Road load', ramp: 'source', max: 255, key: [252, 176, 92] },
   { field: 'pollution', label: 'Pollution', ramp: 'nuisance', max: 255, key: [236, 110, 58] },
   { field: 'crime', label: 'Crime', ramp: 'nuisance', max: 255, key: [232, 70, 110] },
   { field: 'fireRisk', label: 'Fire risk', ramp: 'nuisance', max: 255, key: [250, 150, 40] },

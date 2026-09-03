@@ -12,12 +12,13 @@
  */
 import { City } from './city.ts';
 import { Tiles } from './tiles.ts';
+import { DEFAULT_ROAD_CLASS } from './roads.ts';
 import { DISASTERS } from './disasters.ts';
 import { ACHIEVEMENTS } from './achievements.ts';
 
 const MAGIC = 0x4354534d; // "CTSM"
 const END_MAGIC = 0x454e4421; // "END!"
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 /** Planes written to disk, in order. Derived planes are deliberately absent. */
 const PLANES: Array<keyof Tiles & string> = [
@@ -27,6 +28,8 @@ const PLANES: Array<keyof Tiles & string> = [
 const PLANES_V6: Array<keyof Tiles & string> = ['powerLine', 'pipe'];
 /** Added in v7. Appended for the same reason: older files still read cleanly. */
 const PLANES_V7: Array<keyof Tiles & string> = ['sewer'];
+/** Added in v9, when a road stopped being one thing. */
+const PLANES_V9: Array<keyof Tiles & string> = ['roadClass'];
 
 /** Ticks of field simulation run after loading, to regenerate the derived state. */
 export const SETTLE_TICKS = 14;
@@ -167,6 +170,7 @@ export function serialize(city: City): Uint8Array {
   for (const name of PLANES) writePlane(w, city.tiles[name] as Uint8Array);
   for (const name of PLANES_V6) writePlane(w, city.tiles[name] as Uint8Array);
   for (const name of PLANES_V7) writePlane(w, city.tiles[name] as Uint8Array);
+  for (const name of PLANES_V9) writePlane(w, city.tiles[name] as Uint8Array);
   // Sentinel. If the reader and writer ever fall out of step, this fails with "reader
   // and writer disagree" instead of a misleading complaint about corrupt tile planes —
   // which is exactly how the achievements block was first noticed to be misplaced.
@@ -251,6 +255,15 @@ export function deserialize(bytes: Uint8Array): LoadResult {
   }
   if (version >= 7) {
     for (const name of PLANES_V7) readPlane(r, city.tiles[name] as Uint8Array);
+  }
+  if (version >= 9) {
+    for (const name of PLANES_V9) readPlane(r, city.tiles[name] as Uint8Array);
+  } else {
+    // Every road in an older save was a two-lane street, because that was the only kind
+    // there was. Left at 0 they would have no class, and a road with no class has no
+    // frontage — a loaded city would silently lose all its road access.
+    const { road, roadClass } = city.tiles;
+    for (let i = 0; i < road.length; i++) if (road[i]) roadClass[i] = DEFAULT_ROAD_CLASS;
   }
   // Sewers are NOT back-filled for older saves. Nothing is destroyed by their absence —
   // buildings simply stop at septic level and start to smell, which the Why Panel says

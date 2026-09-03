@@ -1,8 +1,9 @@
 import { CIVIC_DEFS } from '../sim/tiles.ts';
 import {
-  ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, LINE_COST, PIPE_COST,
+  ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, LINE_COST, PIPE_COST,
   type RemoveTarget,
 } from '../sim/city.ts';
+import { ROAD_CLASSES } from '../sim/roads.ts';
 
 export type ToolKind =
   | 'inspect' | 'road' | 'remove' | 'zone' | 'civic' | 'bulldoze'
@@ -25,6 +26,8 @@ export const REMOVE_TARGETS: ReadonlyArray<{ target: RemoveTarget; label: string
 export interface Tool {
   id: string;
   kind: ToolKind;
+  /** Which class of road this lays. Road tools only. */
+  roadClass?: number;
   label: string;
   key: string;
   cost: number;
@@ -118,7 +121,17 @@ export const TOOLS: Tool[] = assignKeys([
   { id: 'remove', kind: 'remove', label: 'Remove', key: '', cost: ROAD_REMOVE_COST, colour: '#5c5f68', group: 'Basics' },
   { id: 'bulldoze', kind: 'bulldoze', label: 'Bulldoze', key: '', cost: BULLDOZE_COST, colour: '#8a3f38', group: 'Basics' },
 
-  { id: 'road', kind: 'road', label: 'Road', key: '', cost: ROAD_COST, colour: '#42464e', group: 'Roads' },
+  ...ROAD_CLASSES.map((c) => ({
+    id: `road-${c.key}`,
+    kind: 'road' as const,
+    label: c.label,
+    key: '',
+    cost: c.cost,
+    roadClass: c.id,
+    colour: c.colour,
+    group: 'Roads',
+    note: c.note,
+  })),
 
   { id: 'powerline', kind: 'powerline', label: 'Power line', key: '', cost: LINE_COST, colour: '#e0c65a', group: 'Utilities' },
   { id: 'pipe', kind: 'pipe', label: 'Water pipe', key: '', cost: PIPE_COST, colour: '#4fa3c8', group: 'Utilities' },
@@ -200,6 +213,11 @@ export function rectCells(
 export function lineCells(
   ax: number, ay: number, bx: number, by: number, width: number,
 ): number[] {
+  // The walk steps by one until it hits the end exactly, so a NaN or fractional endpoint
+  // never terminates and pushes until the array is too long to exist. That happened for
+  // real, from a viewport that had collapsed to zero size: the pointer maths produced a
+  // cell off the map and a drag became an unrecoverable RangeError.
+  if (!isCell(ax) || !isCell(ay) || !isCell(bx) || !isCell(by)) return [];
   const cells: number[] = [];
   const horizontalFirst = Math.abs(bx - ax) >= Math.abs(by - ay);
   const stepX = bx > ax ? 1 : -1;
@@ -212,6 +230,11 @@ export function lineCells(
     for (let x = ax + stepX; x !== bx + stepX; x += stepX) cells.push(by * width + x);
   }
   return cells;
+}
+
+/** A usable grid coordinate: a whole number, in range, and actually a number. */
+function isCell(v: number): boolean {
+  return Number.isInteger(v) && v >= 0 && v < 4096;
 }
 
 /** Top-left cell of a footprint of `size` centred on (cx, cy). */

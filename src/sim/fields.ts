@@ -24,6 +24,7 @@ export const FIELD_NAMES = [
   'cleanupSrc',      // environmental remediation output
   'recycleSrc',      // recycling centre output
   'wasteSrc',        // refuse produced here, after recycling
+  'congestSrc',      // congestion on this road tile
 
   // --- diffused: spread outward from sources, decay with distance ---
   'pollution',
@@ -34,6 +35,7 @@ export const FIELD_NAMES = [
   'transitAccess',
   'cleanupCover',
   'recycleCover',
+  'congestion',
   'amenityAccess',
   'jobAccess',
 
@@ -95,6 +97,10 @@ export const DIFFUSED: ReadonlyArray<{
   // never land on the odd ticks the two every-10 passes use, and like every other pass it
   // shares its tick with exactly one every-4 pass.
   { src: 'recycleSrc', dst: 'recycleCover',   radius: 18, decay: 1.0,  norm: 210,  every: 8,  phase: 4 },
+  // Traffic noise reaches a few tiles off the carriageway and no further — which is the
+  // point: a motorway is a fine neighbour two blocks away and a terrible one next door.
+  // Short radius, so this is a cheap pass despite running on the every-4 rota.
+  { src: 'congestSrc', dst: 'congestion',     radius: 5,  decay: 1.0,  norm: 4000, every: 8,  phase: 0 },
   { src: 'jobsC',      dst: 'jobAccess',      radius: 30, decay: 1.0,  norm: 1200, every: 10, phase: 7 },
 ];
 

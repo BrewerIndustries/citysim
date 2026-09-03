@@ -205,6 +205,7 @@ export class Simulation {
     const recycle = f.get('recycleCover');
     const pollution = f.get('pollution');
     const crime = f.get('crime');
+    const congestion = f.get('congestion');
     const w = this.grid.width;
     // Hoisted: this is a per-cell loop over the whole dirty rect, and reading a property
     // off `this` inside it is not free at Tier 3.
@@ -220,6 +221,7 @@ export class Simulation {
       v += recycle[i] * 0.08;
       v -= pollution[i] * 0.55;
       v -= crime[i] * 0.40;
+      v -= congestion[i] * 0.22;
       lv[i] = v < 0 ? 0 : v > 255 ? 255 : v;
     }
     }
@@ -312,4 +314,5 @@ export const LAND_VALUE_TERMS: ReadonlyArray<{ field: string; label: string; wei
   { field: 'recycleCover', label: 'recycling', weight: 0.08 },
   { field: 'pollution', label: 'pollution', weight: -0.55 },
   { field: 'crime', label: 'crime', weight: -0.40 },
+  { field: 'congestion', label: 'traffic', weight: -0.22 },
 ];

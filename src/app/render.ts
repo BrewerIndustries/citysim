@@ -11,7 +11,7 @@
 import type { Camera } from './camera.ts';
 import type { Snapshot } from './protocol.ts';
 import {
-  GROUND, GROUND_ALT, ROAD, UNPOWERED, ZONE_TINT, GRID_LINE, DEVELOPED_OUTLINE,
+  GROUND, GROUND_ALT, ROAD, ROAD_COLOUR, UNPOWERED, ZONE_TINT, GRID_LINE, DEVELOPED_OUTLINE,
   WATER_DEEP, WATER_SHALLOW, SHORE, mix, buildingColour, CIVIC_COLOUR,
   POWER_LINE, PIPE_LINE, SEWER_LINE, POWER_REACH, PIPE_REACH, SEWER_REACH,
   DEAD_UTILITY, SOURCE_MARK,
@@ -91,7 +91,7 @@ export class CityRenderer {
     const px = this.pixels!;
     const gw = this.gridWidth;
     const {
-      zone, density, road, level, civic, powered, watered, sewered,
+      zone, density, road, roadClass, level, civic, powered, watered, sewered,
       powerLine, pipe, sewer,
     } = snap;
     const nets = this.networks;
@@ -115,7 +115,9 @@ export class CityRenderer {
         }
 
         if (road[i]) {
-          c = ROAD;
+          // Wider roads read lighter, so the hierarchy of the network is visible without
+          // turning on a layer to see it.
+          c = ROAD_COLOUR[roadClass[i]] ?? ROAD;
         } else if (civic[i]) {
           c = CIVIC_COLOUR[civic[i]] ?? GROUND;
         } else if (level[i] > 0) {

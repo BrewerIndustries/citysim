@@ -302,6 +302,14 @@ export class Tiles {
   readonly density: Uint8Array;
   /** 1 if a road occupies this cell. */
   readonly road: Uint8Array;
+  /**
+   * Which class of road: see ROAD_CLASSES in roads.ts. 0 where there is no road.
+   *
+   * Kept beside `road` rather than replacing it, because "is there a road here" is asked
+   * from a dozen places and a truthiness test on a class id would keep working right up
+   * until someone adds class 0 back.
+   */
+  readonly roadClass: Uint8Array;
   /** 1 if a power line runs here. Lines may share a tile with a road. */
   readonly powerLine: Uint8Array;
   /** 1 if a water pipe runs here. Pipes may share a tile with a road or a line. */
@@ -335,7 +343,7 @@ export class Tiles {
 
   constructor(grid: Grid) {
     const n = grid.size;
-    const planes = 14;
+    const planes = 15;
     this.buffer = new ArrayBuffer(n * planes);
     let o = 0;
     const plane = () => {
@@ -346,6 +354,7 @@ export class Tiles {
     this.zone = plane();
     this.density = plane();
     this.road = plane();
+    this.roadClass = plane();
     this.powerLine = plane();
     this.pipe = plane();
     this.sewer = plane();
