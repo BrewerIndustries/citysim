@@ -20,8 +20,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 #app {
   display: grid;
   grid-template-columns: 168px 1fr 320px;
-  grid-template-rows: 48px 1fr;
-  grid-template-areas: "top top top" "tools stage panel";
+  grid-template-rows: 48px 30px 1fr;
+  grid-template-areas: "top top top" "tabs tabs tabs" "tools stage panel";
   height: 100vh;
 }
 
@@ -48,8 +48,18 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ---------- tool rail ---------- */
 #tools { grid-area: tools; background: var(--chrome); border-right: 1px solid var(--line);
-  padding: 10px 8px; overflow-y: auto; }
+  padding: 10px 8px; overflow-y: auto; min-height: 0; }
+/* Full width rather than inside the rail: seven tabs in a 168px column wrap to four
+   rows and eat the space the tools need. */
+#tabs { grid-area: tabs; display: flex; align-items: stretch; gap: 2px; padding: 0 8px;
+  background: var(--chrome); border-bottom: 1px solid var(--line); }
+#tabs button { font: inherit; font-size: 11px; padding: 0 14px; letter-spacing: .01em;
+  background: transparent; color: var(--muted); border: 0; cursor: pointer;
+  white-space: nowrap; border-bottom: 2px solid transparent; }
+#tabs button:hover { color: var(--text); background: var(--chrome-2); }
+#tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
 .toolgroup { margin-bottom: 12px; }
+.toolgroup[hidden] { display: none; }
 .toolgroup h3 { font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em;
   color: var(--dim); margin: 0 0 5px 6px; font-weight: 600; }
 .tool { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px;

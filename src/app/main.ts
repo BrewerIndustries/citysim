@@ -4,8 +4,8 @@ import { CityRenderer, type Overlay } from './render.ts';
 import { View3D } from './view3d.ts';
 import { LAYERS, RAMPS, buildLut, toggleLayer } from './palette.ts';
 import {
-  TOOLS, DENSITY_LABELS, DRAW_MODES, REMOVE_TARGETS, lineCells, brushCells, rectCells,
-  anchorFor, modesFor, type Tool, type DrawMode,
+  TOOLS, TABS, DENSITY_LABELS, DRAW_MODES, REMOVE_TARGETS, tabOfGroup, lineCells,
+  brushCells, rectCells, anchorFor, modesFor, type Tool, type DrawMode,
 } from './tools.ts';
 import { REASON, REASON_TEXT, requiredDesirability } from '../sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
@@ -99,6 +99,44 @@ function undoLabel(): string {
 }
 
 // ---------------------------------------------------------------- tool rail
+/** Which workspace tab the rail is showing. */
+let activeTab = TABS[0].id;
+
+/**
+ * Show one tab's groups.
+ *
+ * Every group is built once and then shown or hidden, rather than the rail being torn
+ * down and rebuilt on each switch: the density, draw-mode and remove-target rows are
+ * built alongside their tools and carry live handlers, and rebuilding them on every tab
+ * change is a lot of moving parts to get wrong for no gain.
+ */
+function setTab(id: string): void {
+  activeTab = id;
+  for (const b of document.querySelectorAll<HTMLElement>('#tabs button')) {
+    b.setAttribute('aria-selected', String(b.dataset.tab === id));
+  }
+  for (const g of document.querySelectorAll<HTMLElement>('.toolgroup')) {
+    // The always-on group is the pointer and the two ways of taking things away; losing
+    // those when you change tab would be actively annoying.
+    g.hidden = g.dataset.tab !== 'always' && g.dataset.tab !== id;
+  }
+}
+
+function buildTabs(): void {
+  const bar = $('tabs');
+  bar.innerHTML = '';
+  for (const t of TABS) {
+    const b = document.createElement('button');
+    b.dataset.tab = t.id;
+    b.textContent = t.label;
+    b.title = t.hint;
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', String(t.id === activeTab));
+    b.onclick = () => setTab(t.id);
+    bar.appendChild(b);
+  }
+}
+
 function buildTools(): void {
   const rail = $('tools');
   rail.innerHTML = '';
@@ -109,6 +147,7 @@ function buildTools(): void {
       group = t.group;
       container = document.createElement('div');
       container.className = 'toolgroup';
+      container.dataset.tab = tabOfGroup(group) ?? 'always';
       container.innerHTML = `<h3>${group}</h3>`;
       rail.appendChild(container);
     }
@@ -214,6 +253,10 @@ function showNetworkLayer(field: string): void {
 
 function selectTool(t: Tool): void {
   tool = t;
+  // A keyboard shortcut can reach a tool whose tab is not showing; follow it there
+  // rather than leaving the rail pointing somewhere else.
+  const tab = tabOfGroup(t.group);
+  if (tab && tab !== activeTab) setTab(tab);
   for (const b of document.querySelectorAll<HTMLElement>('.tool')) {
     b.setAttribute('aria-pressed', String(b.dataset.id === t.id));
   }
@@ -1136,7 +1179,9 @@ function frame(): void {
 // Layers before tools: picking up a network tool shows its layer, so the layer list has
 // to exist before the first tool is selected.
 buildLayers();
+buildTabs();
 buildTools();
+setTab(activeTab);
 $('view-toggle').onclick = () => setViewMode(viewMode === 'plan' ? 'iso' : 'plan');
 buildManualUi();
 buildAchievementsUi();

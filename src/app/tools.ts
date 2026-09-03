@@ -56,11 +56,55 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
   's', 'd', 'f', 'g', 'z', 'x', 'c', 'v', 'b', 'n', 'm']
   .filter((k) => !RESERVED_KEYS.has(k));
 
+/**
+ * The workspace tabs.
+ *
+ * Forty-six tools in one rail is a wall, and most of them are irrelevant to whatever you
+ * are actually doing: laying sewers has nothing to do with choosing a power plant. Tabs
+ * split the rail by the JOB you are doing, so the rail shows ten things instead of
+ * forty-six and the groups inside it stay as the headings they already were.
+ *
+ * A tab owns GROUPS, not tools — the group a tool belongs to already exists and is the
+ * thing the rail headings are built from, so this is one mapping rather than a second
+ * label on every tool that could fall out of step with the first. `test/tools.test.ts`
+ * pins that every group lands in exactly one tab.
+ */
+export const TABS: ReadonlyArray<{ id: string; label: string; groups: string[]; hint: string }> = [
+  { id: 'works', label: 'Public Works', hint: 'Roads, and the power, water and sewer networks',
+    groups: ['Roads', 'Utilities', 'Power', 'Water'] },
+  { id: 'zoning', label: 'Zoning', hint: 'What the city is allowed to build where',
+    groups: ['Zoning'] },
+  { id: 'education', label: 'Education', hint: 'Schools and universities',
+    groups: ['Education'] },
+  { id: 'safety', label: 'Safety', hint: 'Police and fire',
+    groups: ['Safety'] },
+  { id: 'environment', label: 'Environment', hint: 'Parks, cleanup and refuse',
+    groups: ['Parks', 'Environment', 'Refuse'] },
+  { id: 'transit', label: 'Transit', hint: 'Moving people without a car',
+    groups: ['Transit'] },
+  { id: 'works-world', label: 'World Works', hint: 'One per city, forever',
+    groups: ['World works'] },
+];
+
+/**
+ * Tools every tab shows, because they are how you look at and undo everything else.
+ * Kept out of the tabs so that switching tabs never takes away the pointer.
+ */
+export const ALWAYS_ON = new Set(['inspect', 'remove', 'bulldoze']);
+
+/** The tab a group belongs to, or undefined if nothing claims it. */
+export function tabOfGroup(group: string): string | undefined {
+  return TABS.find((t) => t.groups.includes(group))?.id;
+}
+
 /** Which rail section each building belongs to. */
 const GROUP_OF: Record<string, string> = {
   power: 'Power', wind: 'Power', oil: 'Power', gas: 'Power',
   solar: 'Power', nuclear: 'Power', fusion: 'Power',
   pump: 'Water', waterworks: 'Water', sewage: 'Water', treatment: 'Water',
+  police: 'Safety', policehq: 'Safety', fire: 'Safety', firehq: 'Safety',
+  school: 'Education', university: 'Education',
+  park: 'Parks', bigpark: 'Parks',
   cleanup: 'Environment', reclamation: 'Environment',
   landfill: 'Refuse', incinerator: 'Refuse', recycling: 'Refuse', recovery: 'Refuse',
   grandpark: 'World works', stadium: 'World works', terminus: 'World works',
@@ -71,9 +115,10 @@ const GROUP_OF: Record<string, string> = {
 
 export const TOOLS: Tool[] = assignKeys([
   { id: 'inspect', kind: 'inspect', label: 'Inspect', key: '', cost: 0, group: 'Basics' },
-  { id: 'road', kind: 'road', label: 'Road', key: '', cost: ROAD_COST, colour: '#42464e', group: 'Basics' },
   { id: 'remove', kind: 'remove', label: 'Remove', key: '', cost: ROAD_REMOVE_COST, colour: '#5c5f68', group: 'Basics' },
   { id: 'bulldoze', kind: 'bulldoze', label: 'Bulldoze', key: '', cost: BULLDOZE_COST, colour: '#8a3f38', group: 'Basics' },
+
+  { id: 'road', kind: 'road', label: 'Road', key: '', cost: ROAD_COST, colour: '#42464e', group: 'Roads' },
 
   { id: 'powerline', kind: 'powerline', label: 'Power line', key: '', cost: LINE_COST, colour: '#e0c65a', group: 'Utilities' },
   { id: 'pipe', kind: 'pipe', label: 'Water pipe', key: '', cost: PIPE_COST, colour: '#4fa3c8', group: 'Utilities' },

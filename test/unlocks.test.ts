@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { TOOLS, TABS, ALWAYS_ON, tabOfGroup } from '../src/app/tools.ts';
 import { City } from '../src/sim/city.ts';
 import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { CIVIC_DEFS, CIVIC_BY_KEY } from '../src/sim/tiles.ts';
@@ -157,4 +158,46 @@ test('requirement text reads as English', () => {
     requirementText(def('nuclear')),
     '20,000 residents, a gas power plant and a university',
   );
+});
+
+test('every tool group belongs to exactly one workspace tab', () => {
+  // A group nothing claims is a group nobody can reach: its tools exist, have shortcuts,
+  // and are invisible in every tab. Basics is the deliberate exception — it is always on.
+  for (const group of new Set(TOOLS.map((t) => t.group))) {
+    if (group === 'Basics') continue;
+    const owners = TABS.filter((t) => t.groups.includes(group));
+    assert.equal(owners.length, 1,
+      `group '${group}' is claimed by ${owners.length} tabs: ${owners.map((o) => o.id).join(', ')}`);
+  }
+});
+
+test('every tab has something in it', () => {
+  for (const tab of TABS) {
+    const n = TOOLS.filter((t) => tabOfGroup(t.group) === tab.id).length;
+    assert.ok(n > 0, `tab '${tab.label}' is empty`);
+  }
+});
+
+test('a tab never names a group that does not exist', () => {
+  const groups = new Set(TOOLS.map((t) => t.group));
+  for (const tab of TABS) {
+    for (const g of tab.groups) {
+      assert.ok(groups.has(g), `tab '${tab.label}' names a group '${g}' that no tool uses`);
+    }
+  }
+});
+
+test('the always-on tools are the ones that make sense in every tab', () => {
+  // Switching tab must never take away the pointer or the ways of undoing a mistake.
+  const basics = TOOLS.filter((t) => t.group === 'Basics').map((t) => t.id);
+  assert.deepEqual(new Set(basics), ALWAYS_ON);
+});
+
+test('a tab shows a workable number of tools', () => {
+  // The whole point is that the rail stops being a wall. If one tab holds most of the
+  // tools, it has not been split, it has been renamed.
+  for (const tab of TABS) {
+    const n = TOOLS.filter((t) => tabOfGroup(t.group) === tab.id).length;
+    assert.ok(n <= TOOLS.length / 2, `tab '${tab.label}' holds ${n} of ${TOOLS.length} tools`);
+  }
 });
