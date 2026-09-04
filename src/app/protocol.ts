@@ -49,6 +49,7 @@ export interface Snapshot {
   level: Uint8Array;
   civic: Uint8Array;
   civicAnchor: Uint8Array;
+  trees: Uint8Array;
   powered: Uint8Array;
   /**
   * The field planes for the currently selected data layers, in selection order, and
@@ -117,6 +118,8 @@ export type Action =
   | { kind: 'road'; cells: number[]; roadClass: number; roadLevel: number }
   | { kind: 'junction'; cell: number; junction: number; roadClass: number }
   | { kind: 'terraform'; cells: number[]; steps: number }
+  | { kind: 'trees'; cells: number[]; steps: number }
+  | { kind: 'water'; cells: number[]; wet: boolean }
   | { kind: 'remove'; cells: number[]; target: import('../sim/city.ts').RemoveTarget }
   | { kind: 'utility'; cells: number[]; utility: 'powerLine' | 'pipe' | 'sewer' }
   | { kind: 'zone'; cells: number[]; zone: number; density: number }

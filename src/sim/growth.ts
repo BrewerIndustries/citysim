@@ -208,6 +208,10 @@ export function stepGrowth(
     const gate = hash32(i ^ Math.imul(tick, 0x9e3779b1)) / 4294967296;
     if (gate < 0.02 + wants * 0.05) {
       level[i] = lvl + 1;
+      // Whatever grows here clears the planting. Trees are landscaping, not an obstacle,
+      // and a house with a wood still standing on its plot would be double-counting the
+      // amenity that made the plot attractive in the first place.
+      if (lvl === 0) tiles.trees[i] = 0;
       grewThisTick++;
       changes.addAt(i, i & (grid.width - 1), i >>> grid.shift);
       if (z === ZONE_RES) population += residentsAt(lvl + 1, den) - residentsAt(lvl, den);

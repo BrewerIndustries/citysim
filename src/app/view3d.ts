@@ -55,6 +55,12 @@ export interface Terrain3D {
 /** Max blocks drawn in one frame. Beyond this the far ones are dropped, not queued. */
 const MAX_BUILDINGS = 120_000;
 const MAX_ROADS = 120_000;
+/** Planted tiles drawn at once. Trees are cheap but there is no point drawing a forest. */
+const MAX_TREES = 90_000;
+/** Canopy colours, darkest at the densest planting. */
+const TREE_LIGHT = new THREE.Color('#6aa85a');
+const TREE_DARK = new THREE.Color('#2f6b3a');
+
 /** A drag preview past this many tiles is a mistake, not a plan. */
 const MAX_PREVIEW = 40_000;
 
@@ -83,6 +89,8 @@ export class View3D {
    */
   private readonly roadMeshes = new Map<number, THREE.InstancedMesh>();
   private junctions!: THREE.InstancedMesh;
+  /** Planting. Cones, because a cone at this scale is unmistakably a tree. */
+  private trees!: THREE.InstancedMesh;
   private readonly dummy = new THREE.Object3D();
   private readonly colour = new THREE.Color();
   private hover: THREE.Mesh;
@@ -182,6 +190,20 @@ export class View3D {
     };
     for (const [id, tex] of roadTextures()) this.roadMeshes.set(id, roadMesh(tex));
     this.junctions = roadMesh(junctionTexture());
+
+    // A cone on a short trunk. Cheap, and the silhouette does all the work at ¾ — the
+    // giveaway that a scale model is a model is that its trees are cones.
+    const canopy = new THREE.ConeGeometry(0.42, 1.1, 6);
+    canopy.translate(0, 0.72, 0);
+    this.trees = new THREE.InstancedMesh(
+      canopy, new THREE.MeshLambertMaterial({ color: 0xffffff }), MAX_TREES,
+    );
+    this.trees.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.trees.count = 0;
+    this.trees.frustumCulled = false;
+    this.trees.castShadow = true;
+    this.trees.receiveShadow = true;
+    this.scene.add(this.trees);
 
     this.hover = new THREE.Mesh(
       new THREE.BoxGeometry(CELL, 0.05, CELL),
@@ -326,7 +348,8 @@ export class View3D {
   /** Rebuild the instance buffers for whatever is on screen. */
   update(snap: Snapshot, aspect: number): void {
     const {
-      zone, density, level, road, roadClass, roadLevel, junction, civic, civicAnchor, powered,
+      zone, density, level, road, roadClass, roadLevel, junction, trees,
+      civic, civicAnchor, powered,
     } = snap;
     const r = this.cam.visibleCells(aspect, this.gridW, this.gridH);
     const w = this.gridW;
@@ -336,6 +359,7 @@ export class View3D {
     const counts = new Map<number, number>();
     for (const id of this.roadMeshes.keys()) counts.set(id, 0);
     let jn = 0;
+    let tr = 0;
     for (let y = r.y0; y <= r.y1; y++) {
       for (let x = r.x0; x <= r.x1; x++) {
         const i = y * w + x;
@@ -376,6 +400,29 @@ export class View3D {
           if (marked) counts.set(roadClass[i], slot + 1);
           else jn = slot + 1;
           continue;
+        }
+
+        // Planting, under everything: a tile that has grown a building has had its trees
+        // cleared by the simulation already, so this never has to fight with massing.
+        if (trees[i] && tr < MAX_TREES) {
+          const density = trees[i] / 3;
+          // Two or three per tile at full planting, offset deterministically so a planted
+          // block is a wood rather than a grid of identical cones.
+          const n = Math.max(1, Math.round(density * 3));
+          for (let k = 0; k < n && tr < MAX_TREES; k++) {
+            const j = ((i * 2654435761) ^ (k * 40503)) >>> 0;
+            const ox = ((j % 1000) / 1000 - 0.5) * CELL * 0.62;
+            const oz = (((j >>> 10) % 1000) / 1000 - 0.5) * CELL * 0.62;
+            const scale = 0.72 + ((j >>> 20) % 1000) / 2600;
+            this.dummy.position.set(x * CELL + ox, base, y * CELL + oz);
+            this.dummy.rotation.y = 0;
+            this.dummy.scale.set(scale, scale, scale);
+            this.dummy.updateMatrix();
+            this.trees.setMatrixAt(tr, this.dummy.matrix);
+            this.colour.copy(TREE_LIGHT).lerp(TREE_DARK, density);
+            this.trees.setColorAt(tr, this.colour);
+            tr++;
+          }
         }
 
         const civicId = civic[i];
@@ -428,6 +475,9 @@ export class View3D {
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
+    this.trees.count = tr;
+    this.trees.instanceMatrix.needsUpdate = true;
+    if (this.trees.instanceColor) this.trees.instanceColor.needsUpdate = true;
     this.junctions.count = jn;
     this.junctions.instanceMatrix.needsUpdate = true;
     if (this.junctions.instanceColor) this.junctions.instanceColor.needsUpdate = true;

@@ -22,7 +22,7 @@ import { updateFireRisk, stepFires } from './fire.ts';
 import { stepDisasters, DISASTERS } from './disasters.ts';
 import { ACHIEVEMENTS, snapshotFor } from './achievements.ts';
 import { History } from './history.ts';
-import { Terrain, WATER_TABLE_MIN } from './terrain.ts';
+import { Terrain, WATER_TABLE_MIN, SEA_LEVEL } from './terrain.ts';
 import { lockReason, unlockedIds, type UnlockState } from './unlocks.ts';
 import { ChangeLog } from './dirty.ts';
 import { effectsOf, NO_EFFECTS, type WorksEffects } from './works.ts';
@@ -63,6 +63,17 @@ export const CONDITION_TTL = 20;
 
 /** What one step of raising or lowering a tile costs. */
 export const TERRAFORM_COST = 14;
+/** Planting one tile, per step of density. */
+export const TREE_COST = 6;
+/** Densest a tile can be planted. */
+export const TREE_MAX = 3;
+/**
+ * Amenity a fully-planted tile is worth.
+ *
+ * Below a park deliberately — a park is a destination, trees are a nice street — but they
+ * cover ground a park never could, so a planted district adds up.
+ */
+export const TREE_AMENITY = 26;
 /** How much height one click moves. Small enough to shape a slope, big enough to feel. */
 export const TERRAFORM_STEP = 9;
 
@@ -695,6 +706,12 @@ export class City {
     const amenity = this.fields.get('amenity');
     const shore = this.terrain.shore;
     for (let i = 0; i < shore.length; i++) if (shore[i]) amenity[i] = SHORE_AMENITY;
+    // Trees add to whatever the tile already offers. A planted waterfront is better than
+    // a bare one, which is the whole reason to plant a waterfront.
+    const trees = this.tiles.trees;
+    for (let i = 0; i < trees.length; i++) {
+      if (trees[i]) amenity[i] += (trees[i] / TREE_MAX) * TREE_AMENITY;
+    }
 
     // A raw outflow ruins the shore it discharges into. The waterfront premium is the
     // first thing you lose by dumping untreated, before the pollution even spreads.
@@ -812,6 +829,7 @@ export class City {
     if (!this.canAfford(price)) return false;
     this.history.touch(t, i);
     this.spend(price);
+    t.trees[i] = 0;
     if (!t.road[i]) {
       t.road[i] = 1;
       this.roadCells++;
@@ -971,6 +989,49 @@ export class City {
   }
 
   /**
+   * Put a tile directly under, or directly over, sea level.
+   *
+   * Digging a lake by clicking Lower ten times is not shaping water, it is counting. This
+   * is the same rule as `terraform` — bare land only — expressed as the thing the player
+   * actually wants: water here, or ground here.
+   */
+  setWater(i: number, wet: boolean): { ok: boolean; error?: string } {
+    const target = wet ? SEA_LEVEL - 6 : SEA_LEVEL + 6;
+    const current = this.terrain.height[i];
+    if (wet === current < SEA_LEVEL) {
+      return { ok: false, error: wet ? 'that is already water' : 'that is already dry' };
+    }
+    return this.terraform(i, (target - current) / TERRAFORM_STEP);
+  }
+
+  /**
+   * Plant or clear trees.
+   *
+   * Water and roofs cannot hold trees; everything else can, including zoned land that
+   * has not been built on. What DOES get built there clears them, which is why planting
+   * ahead of development is a way of making a district desirable rather than a way of
+   * blocking it.
+   */
+  plantTrees(i: number, steps: number): { ok: boolean; error?: string } {
+    const t = this.tiles;
+    if (this.terrain.water[i]) return { ok: false, error: 'that is open water' };
+    if (t.road[i] || t.civic[i]) return { ok: false, error: 'something is built here' };
+    const next = Math.max(0, Math.min(TREE_MAX, t.trees[i] + steps));
+    if (next === t.trees[i]) {
+      return { ok: false, error: steps > 0 ? 'it is as dense as it gets' : 'there is nothing to clear' };
+    }
+    // Clearing is free; you are not charged to cut something down.
+    const price = steps > 0 ? TREE_COST : 0;
+    if (!this.canAfford(price)) return { ok: false, error: `costs $${TREE_COST}` };
+    this.history.touch(t, i);
+    this.spend(price);
+    t.trees[i] = next;
+    this.recordChange(i);
+    this.markCivicsDirty();
+    return { ok: true };
+  }
+
+  /**
    * Raise or lower the ground.
    *
    * Only bare land: a tile with a road, a building or a civic on it is refused rather
@@ -985,6 +1046,8 @@ export class City {
   terraform(i: number, steps: number): { ok: boolean; error?: string } {
     const t = this.tiles;
     if (steps === 0) return { ok: false, error: 'nothing to do' };
+    // Trees go with the ground they are standing on.
+    if (t.trees[i]) t.trees[i] = 0;
     if (t.road[i]) return { ok: false, error: 'there is a road here' };
     if (t.civic[i]) return { ok: false, error: 'there is a building here' };
     if (t.level[i] > 0) return { ok: false, error: 'something has been built here' };
@@ -1103,6 +1166,7 @@ export class City {
         this.tiles.civic[i] = def.id;
         this.tiles.zone[i] = 0;
         this.tiles.level[i] = 0;
+        this.tiles.trees[i] = 0;
         this.tiles.civicAnchor[i] = 0;
         this.recordChange(i);
       }

@@ -1,14 +1,14 @@
 import { CIVIC_DEFS } from '../sim/tiles.ts';
 import {
   ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, LINE_COST, PIPE_COST, TERRAFORM_COST,
-  type RemoveTarget,
+  TREE_COST, type RemoveTarget,
 } from '../sim/city.ts';
 import { ROAD_CLASSES } from '../sim/roads.ts';
 import { JUNCTIONS, JUNCTION_BY_ID } from '../sim/junctions.ts';
 
 export type ToolKind =
   | 'inspect' | 'road' | 'junction' | 'remove' | 'zone' | 'civic' | 'bulldoze'
-  | 'powerline' | 'pipe' | 'sewer' | 'terraform';
+  | 'powerline' | 'pipe' | 'sewer' | 'terraform' | 'trees' | 'water';
 
 /**
  * What the Remove tool takes off a tile. `all` is the default because "remove" with a
@@ -33,6 +33,10 @@ export interface Tool {
   junctionId?: number;
   /** How many steps of height one click moves. Terraform tools only. */
   terraform?: number;
+  /** How many steps of planting one click moves. Tree tools only. */
+  trees?: number;
+  /** Whether this brush makes water or dry land. Water tools only. */
+  wet?: boolean;
   /** Short note shown on hover, for tools that need one. */
   note?: string;
   label: string;
@@ -128,6 +132,19 @@ export const TOOLS: Tool[] = assignKeys([
   { id: 'remove', kind: 'remove', label: 'Remove', key: '', cost: ROAD_REMOVE_COST, colour: '#5c5f68', group: 'Basics' },
   { id: 'bulldoze', kind: 'bulldoze', label: 'Bulldoze', key: '', cost: BULLDOZE_COST, colour: '#8a3f38', group: 'Basics' },
 
+  { id: 'plant', kind: 'trees' as const, label: 'Plant trees', key: '', cost: TREE_COST,
+    trees: 1, colour: '#4e8f52', group: 'Land',
+    note: 'Worth living near. Whatever gets built here clears them' },
+  { id: 'fell', kind: 'trees' as const, label: 'Clear trees', key: '', cost: 0,
+    trees: -1, colour: '#7a6a4a', group: 'Land',
+    note: 'Free — you are not charged to cut something down' },
+  { id: 'flood', kind: 'water' as const, label: 'Add water', key: '', cost: TERRAFORM_COST,
+    wet: true, colour: '#3f7fb0', group: 'Land',
+    note: 'Puts a tile straight under sea level, without counting clicks' },
+  { id: 'drain', kind: 'water' as const, label: 'Fill water', key: '', cost: TERRAFORM_COST,
+    wet: false, colour: '#9a8a62', group: 'Land',
+    note: 'And straight back over it' },
+
   { id: 'raise', kind: 'terraform' as const, label: 'Raise land', key: '', cost: TERRAFORM_COST,
     terraform: 1, colour: '#8a9a70', group: 'Land',
     note: 'Bare land only. Above sea level, water becomes ground' },
@@ -210,7 +227,9 @@ export function modesFor(kind: ToolKind): { modes: DrawMode[]; preferred: DrawMo
     case 'road':
       return { modes: ['line', 'curve', 'pencil', 'rectangle'], preferred: 'line' };
     case 'terraform':
-      // Shaping ground is a brush, not a line: you sculpt by going over it.
+    case 'trees':
+    case 'water':
+      // Landscaping is a brush, not a line: you sculpt by going over it.
       return { modes: ['pencil', 'rectangle'], preferred: 'pencil' };
     case 'remove':
     case 'powerline':

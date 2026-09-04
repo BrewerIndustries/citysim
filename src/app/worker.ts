@@ -49,7 +49,7 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
         apply(city, msg.action);
         // Reshaping the ground moves the coastline, so the client's copy of the terrain
         // is stale the moment it happens.
-        if (msg.action.kind === 'terraform') postTerrain(city);
+        if (msg.action.kind === 'terraform' || msg.action.kind === 'water') postTerrain(city);
       }
       break;
     case 'endstroke':
@@ -137,6 +137,24 @@ function monthName(m: number): string { return MONTHS[m] ?? ''; }
 function apply(c: City, a: import('./protocol.ts').Action): void {
   switch (a.kind) {
     case 'road': for (const i of a.cells) c.buildRoad(i, a.roadClass, a.roadLevel); break;
+    case 'trees': {
+      let error: string | null = null;
+      for (const i of a.cells) {
+        const r = c.plantTrees(i, a.steps);
+        if (!r.ok && r.error) error ??= r.error;
+      }
+      if (error) c.pushMessage(`Can't plant that — ${error}.`);
+      break;
+    }
+    case 'water': {
+      let error: string | null = null;
+      for (const i of a.cells) {
+        const r = c.setWater(i, a.wet);
+        if (!r.ok && r.error) error ??= r.error;
+      }
+      if (error) c.pushMessage(`Can't reshape that — ${error}.`);
+      break;
+    }
     case 'terraform': {
       let error: string | null = null;
       for (const i of a.cells) {
@@ -229,6 +247,7 @@ function loop(): void {
     sewered: new Uint8Array(t.sewered),
     level: new Uint8Array(t.level),
     civic: new Uint8Array(t.civic),
+    trees: new Uint8Array(t.trees),
     civicAnchor: new Uint8Array(t.civicAnchor),
     powered: new Uint8Array(t.powered),
     layers, layerNames: [...layerNames],
@@ -236,7 +255,7 @@ function loop(): void {
   lastSeriesMonth = c.month;
   const transfer: Transferable[] = [
     snap.zone.buffer, snap.density.buffer, snap.road.buffer, snap.roadClass.buffer, snap.roadLevel.buffer, snap.junction.buffer,
-    snap.level.buffer, snap.civic.buffer, snap.civicAnchor.buffer, snap.powered.buffer,
+    snap.level.buffer, snap.civic.buffer, snap.civicAnchor.buffer, snap.trees.buffer, snap.powered.buffer,
     snap.powerLine.buffer, snap.pipe.buffer, snap.watered.buffer,
     snap.sewer.buffer, snap.sewered.buffer,
   ];

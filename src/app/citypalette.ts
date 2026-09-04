@@ -107,6 +107,9 @@ export const ROAD_COLOUR: Record<number, number> =
 export const LEVEL_LIFT: readonly number[] = [0, 0.22, 0.42, 0.6];
 export const ROAD_HIGH = parseHex('#e6ebf5');
 
+/** Planted ground, at full density. Blended by how densely a tile is planted. */
+export const TREE_COLOUR = parseHex('#3f7a46');
+
 /** Junction tiles read brighter than the road they are made of, so a stamp is visible. */
 export const JUNCTION_MARK = parseHex('#a8b0c4');
 

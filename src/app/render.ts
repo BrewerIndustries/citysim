@@ -11,7 +11,7 @@
 import type { Camera } from './camera.ts';
 import type { Snapshot } from './protocol.ts';
 import {
-  GROUND, GROUND_ALT, ROAD, ROAD_COLOUR, JUNCTION_MARK, LEVEL_LIFT, ROAD_HIGH,
+  GROUND, GROUND_ALT, ROAD, ROAD_COLOUR, JUNCTION_MARK, LEVEL_LIFT, ROAD_HIGH, TREE_COLOUR,
   UNPOWERED, ZONE_TINT, GRID_LINE, DEVELOPED_OUTLINE,
   WATER_DEEP, WATER_SHALLOW, SHORE, mix, buildingColour, CIVIC_COLOUR,
   POWER_LINE, PIPE_LINE, SEWER_LINE, POWER_REACH, PIPE_REACH, SEWER_REACH,
@@ -92,7 +92,8 @@ export class CityRenderer {
     const px = this.pixels!;
     const gw = this.gridWidth;
     const {
-      zone, density, road, roadClass, roadLevel, junction, level, civic, powered, watered, sewered,
+      zone, density, road, roadClass, roadLevel, junction, trees,
+      level, civic, powered, watered, sewered,
       powerLine, pipe, sewer,
     } = snap;
     const nets = this.networks;
@@ -140,6 +141,12 @@ export class CityRenderer {
           c = SHORE;
         } else {
           c = ((r.x0 + x) ^ (r.y0 + y)) & 4 ? GROUND : GROUND_ALT;
+        }
+
+        // Planting sits under everything built, so a treed street still reads as a
+        // street — it is landscaping, not a land use.
+        if (trees[i] && level[i] === 0 && !civic[i]) {
+          c = mix(c, TREE_COLOUR, 0.3 + (trees[i] / 3) * 0.55);
         }
 
         // Gentle elevation shading on open land, so the map reads as terrain rather

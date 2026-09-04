@@ -319,6 +319,14 @@ export class Tiles {
    * junction — and how a street carries on underneath a deck two levels above it.
    */
   readonly roadLevel: Uint8Array;
+  /**
+   * Trees on this tile, 0 (none) to TREE_MAX (dense). Planted, not grown.
+   *
+   * Landscaping is not decoration here: trees feed the same amenity field parks do, so a
+   * planted street is worth more to live on than a bare one. They are cleared by whatever
+   * gets built on top of them, because a sapling is not an obstacle.
+   */
+  readonly trees: Uint8Array;
   /** 1 if a power line runs here. Lines may share a tile with a road. */
   readonly powerLine: Uint8Array;
   /** 1 if a water pipe runs here. Pipes may share a tile with a road or a line. */
@@ -352,7 +360,7 @@ export class Tiles {
 
   constructor(grid: Grid) {
     const n = grid.size;
-    const planes = 17;
+    const planes = 18;
     this.buffer = new ArrayBuffer(n * planes);
     let o = 0;
     const plane = () => {
@@ -366,6 +374,7 @@ export class Tiles {
     this.roadClass = plane();
     this.junction = plane();
     this.roadLevel = plane();
+    this.trees = plane();
     this.powerLine = plane();
     this.pipe = plane();
     this.sewer = plane();

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { City, TERRAFORM_COST, TERRAFORM_STEP } from '../src/sim/city.ts';
+import { City, TERRAFORM_COST, TERRAFORM_STEP, TREE_COST, TREE_MAX } from '../src/sim/city.ts';
 import { FLAT_MAP, SEA_LEVEL } from '../src/sim/terrain.ts';
 import { ZONE_RES, CIVIC_BY_KEY } from '../src/sim/tiles.ts';
 import { ROAD_CLASS_BY_KEY } from '../src/sim/roads.ts';
@@ -146,4 +146,99 @@ test('an untouched city stores no terrain at all', () => {
   for (let x = 40; x < 60; x++) shaped.terraform(shaped.grid.index(x, 40), 1);
   assert.ok(serialize(shaped).length > plain.length, 'edits should cost something to store');
   assert.equal(city().terrain.edits.size, 0, 'and a city nobody reshaped should store none');
+});
+
+// ---------------------------------------------------------------- landscaping
+test('planting raises the amenity of the ground it is on', () => {
+  // Trees are not decoration: they feed the same field parks do, so a planted street is
+  // worth more to live on than a bare one.
+  const c = city();
+  const i = c.grid.index(40, 40);
+  c.step();
+  const bare = c.fields.get('amenity')[i];
+  assert.ok(c.plantTrees(i, TREE_MAX).ok);
+  c.step();
+  assert.ok(c.fields.get('amenity')[i] > bare, 'planted ground should be worth more');
+});
+
+test('planting stops at full and clearing stops at empty', () => {
+  const c = city();
+  const i = c.grid.index(40, 40);
+  assert.ok(c.plantTrees(i, TREE_MAX).ok);
+  assert.equal(c.tiles.trees[i], TREE_MAX);
+  assert.match(c.plantTrees(i, 1).error ?? '', /as dense as it gets/);
+
+  assert.ok(c.plantTrees(i, -TREE_MAX).ok);
+  assert.equal(c.tiles.trees[i], 0);
+  assert.match(c.plantTrees(i, -1).error ?? '', /nothing to clear/);
+});
+
+test('clearing is free, planting is not', () => {
+  const c = city();
+  const i = c.grid.index(40, 40);
+  const funds = c.funds;
+  assert.ok(c.plantTrees(i, 1).ok);
+  assert.equal(c.funds, funds - TREE_COST);
+  const planted = c.funds;
+  assert.ok(c.plantTrees(i, -1).ok);
+  assert.equal(c.funds, planted, 'you are not charged to cut something down');
+});
+
+test('nothing is planted on water or on what is already built', () => {
+  const c = city();
+  const g = c.grid;
+  const road = g.index(40, 40);
+  assert.ok(c.buildRoad(road, street.id));
+  assert.match(c.plantTrees(road, 1).error ?? '', /built/);
+
+  const wet = g.index(50, 50);
+  assert.ok(c.setWater(wet, true).ok);
+  assert.match(c.plantTrees(wet, 1).error ?? '', /open water/);
+});
+
+test('whatever gets built clears the planting', () => {
+  // Trees are landscaping, not an obstacle — and a house with a wood still standing on
+  // its plot would double-count the amenity that made the plot attractive.
+  const c = city();
+  const g = c.grid;
+  const i = g.index(40, 40);
+  assert.ok(c.plantTrees(i, TREE_MAX).ok);
+  assert.ok(c.buildRoad(i, street.id));
+  assert.equal(c.tiles.trees[i], 0);
+
+  const j = g.index(50, 50);
+  assert.ok(c.plantTrees(j, TREE_MAX).ok);
+  assert.ok(c.placeCivic(j, CIVIC_BY_KEY.get('park')!.id).ok);
+  assert.equal(c.tiles.trees[j], 0, 'a civic footprint clears what it covers');
+});
+
+test('the water brush gets there in one click, both ways', () => {
+  // Digging a lake by clicking Lower ten times is counting, not shaping.
+  const c = city();
+  const i = c.grid.index(40, 40);
+  assert.equal(c.terrain.water[i], 0);
+  assert.ok(c.setWater(i, true).ok);
+  assert.equal(c.terrain.water[i], 1, 'one click should be enough');
+  assert.match(c.setWater(i, true).error ?? '', /already water/);
+
+  assert.ok(c.setWater(i, false).ok);
+  assert.equal(c.terrain.water[i], 0);
+  assert.match(c.setWater(i, false).error ?? '', /already dry/);
+});
+
+test('the water brush obeys the same rules as reshaping by hand', () => {
+  const c = city();
+  const i = c.grid.index(40, 40);
+  assert.ok(c.buildRoad(i, street.id));
+  assert.match(c.setWater(i, true).error ?? '', /road/);
+});
+
+test('planting survives a save round trip', () => {
+  const c = city();
+  const g = c.grid;
+  for (let x = 40; x < 46; x++) assert.ok(c.plantTrees(g.index(x, 40), 2).ok);
+  const restored = deserialize(serialize(c)).city;
+  for (let x = 40; x < 46; x++) {
+    assert.equal(restored.tiles.trees[g.index(x, 40)], 2, `cell ${x} lost its trees`);
+  }
 });

@@ -171,6 +171,11 @@ space-drag to pan.
   capacity. That second pass is what makes a wide road *relieve* the streets feeding it.
   Congestion is load over capacity, and a negative term in land value a few tiles either
   side. Nothing is ever routed from an origin to a destination.
+- **Landscaping** — tree brushes that feed the same amenity field parks do, so a planted
+  street is worth more to live on than a bare one; and water brushes that put a tile under
+  or over sea level in one click rather than counting. Whatever gets built clears the
+  planting, so planting ahead of development makes a district desirable rather than
+  blocking it. Clearing is free.
 - **Terraforming** — Raise and Lower reshape the ground, and height is not decoration:
   below sea level is water and above it is not. Dig a channel and it floods; fill a bay and
   you can build on it — which moves the coastline, the waterfront amenity, the flood map and
@@ -208,7 +213,7 @@ space-drag to pan.
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 246 tests
+npm test          # 254 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 

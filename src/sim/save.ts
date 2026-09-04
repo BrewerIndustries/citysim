@@ -18,7 +18,7 @@ import { ACHIEVEMENTS } from './achievements.ts';
 
 const MAGIC = 0x4354534d; // "CTSM"
 const END_MAGIC = 0x454e4421; // "END!"
-export const SAVE_VERSION = 12;
+export const SAVE_VERSION = 13;
 
 /** Planes written to disk, in order. Derived planes are deliberately absent. */
 const PLANES: Array<keyof Tiles & string> = [
@@ -34,6 +34,8 @@ const PLANES_V9: Array<keyof Tiles & string> = ['roadClass'];
 const PLANES_V10: Array<keyof Tiles & string> = ['junction'];
 /** Added in v11, when roads gained a height. Absent means everything is on the ground. */
 const PLANES_V11: Array<keyof Tiles & string> = ['roadLevel'];
+/** Added in v13, with landscaping. Absent means a city nobody planted. */
+const PLANES_V13: Array<keyof Tiles & string> = ['trees'];
 
 /** Ticks of field simulation run after loading, to regenerate the derived state. */
 export const SETTLE_TICKS = 14;
@@ -179,6 +181,7 @@ export function serialize(city: City): Uint8Array {
   for (const name of PLANES_V11) writePlane(w, city.tiles[name] as Uint8Array);
   // Terraforming, v12. Sparse: a city that regrades a few hundred tiles should not pay
   // for a full 65KB height map in every save, and most cities change none at all.
+  for (const name of PLANES_V13) writePlane(w, city.tiles[name] as Uint8Array);
   const edits = [...city.terrain.edits];
   w.u32(edits.length);
   for (const [i, h] of edits) { w.u32(i); w.u8(h); }
@@ -276,6 +279,9 @@ export function deserialize(bytes: Uint8Array): LoadResult {
       for (const name of PLANES_V10) readPlane(r, city.tiles[name] as Uint8Array);
       if (version >= 11) {
         for (const name of PLANES_V11) readPlane(r, city.tiles[name] as Uint8Array);
+        if (version >= 13) {
+          for (const name of PLANES_V13) readPlane(r, city.tiles[name] as Uint8Array);
+        }
         if (version >= 12) {
           const n = r.u32();
           const edits: Array<[number, number]> = [];

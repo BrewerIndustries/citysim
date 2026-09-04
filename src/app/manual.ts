@@ -7,7 +7,7 @@
  * the same reasoning that makes the Why Panel read LAND_VALUE_TERMS from sim.ts.
  */
 import { ROAD_REACH } from '../sim/roads.ts';
-import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, TICKS_PER_MONTH, ROAD_UPKEEP, TERRAFORM_COST } from '../sim/city.ts';
+import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, TICKS_PER_MONTH, ROAD_UPKEEP, TERRAFORM_COST, TREE_AMENITY } from '../sim/city.ts';
 import { CIVIC_DEFS, MAX_LEVEL, ZONE_LABEL, ZONE_RES, ZONE_COM, ZONE_IND } from '../sim/tiles.ts';
 import { requirementText } from '../sim/unlocks.ts';
 import { requiredDesirability, REASON_TEXT, DECLINE_BELOW, DISTRESS_LIMIT, SEPTIC_MAX_LEVEL, residentsAt, jobsAt } from '../sim/growth.ts';
@@ -285,7 +285,22 @@ export function buildManual(): ManualSection[] {
         street is not site preparation. Clear it first if that is genuinely what you meant.</p>
         <p>Reshaped ground is the one part of the map that is <i>yours</i> rather than
         generated, so it is stored in your save — only the tiles you actually changed, which
-        is why a city that levels a hillside still saves in about a kilobyte.</p>`,
+        is why a city that levels a hillside still saves in about a kilobyte.</p>
+        <h4>Water</h4>
+        <p><b>Add water</b> and <b>Fill water</b> put a tile straight under or over sea
+        level in one click. They obey exactly the same rules as raising and lowering by
+        hand — this is the same operation, said the way you actually mean it, rather than
+        counting clicks to dig a lake.</p>
+        <h4>Trees</h4>
+        <p>Planting is not decoration. Trees feed <b>the same amenity field parks do</b>,
+        up to ${TREE_AMENITY} at full density — less than a park, because a park is a
+        destination and trees are a nice street, but they cover ground a park never could,
+        so a planted district adds up. Plant in three passes to reach full density.</p>
+        <p class="tip"><b>Whatever gets built clears them.</b> A road, a building, or a lot
+        that grows takes its trees with it — they are landscaping, not an obstacle. So
+        planting ahead of development is a way of making a district <i>desirable</i>, not a
+        way of blocking it, and the amenity is never counted twice.</p>
+        <p><b>Clearing is free.</b> You are not charged to cut something down.</p>`,
     },
     {
       id: 'zoning',
