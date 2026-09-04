@@ -23,6 +23,11 @@ cd citysim      && npm run dev        # dev  → localhost:5173
 cd citysim-play && npm run dev:play   # play → localhost:5174
 ```
 
+Both are also in `.claude/launch.json`, so either can be started by name. The play entry
+runs `npm --prefix ../citysim-play`, which points the script at the play worktree — without
+it, starting "play" from the dev checkout would serve dev's files on the play port, which
+is the one thing the two instances exist to prevent.
+
 ## Promoting dev to play
 
 When a batch of work is ready to try:
