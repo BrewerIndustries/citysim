@@ -94,7 +94,7 @@ export function stepTraffic(
   roadCount: number,
 ): TrafficReport {
   const { width, height, size } = grid;
-  const { zone, level, density, road, roadClass } = tiles;
+  const { zone, level, density, road, roadClass, junction } = tiles;
   // Cleared and walked through the compacted list, not the grid: roads are a thin
   // skeleton over a mostly empty map, and scanning every cell three times a tick to find
   // them cost more than the whole rest of the pass.
@@ -130,10 +130,10 @@ export function stepTraffic(
       const n1 = x < width - 1 ? i + 1 : -1;
       const n2 = y > 0 ? i - width : -1;
       const n3 = y < height - 1 ? i + width : -1;
-      const c0 = n0 >= 0 && road[n0] ? capacityOf(roadClass[n0]) : 0;
-      const c1 = n1 >= 0 && road[n1] ? capacityOf(roadClass[n1]) : 0;
-      const c2 = n2 >= 0 && road[n2] ? capacityOf(roadClass[n2]) : 0;
-      const c3 = n3 >= 0 && road[n3] ? capacityOf(roadClass[n3]) : 0;
+      const c0 = n0 >= 0 && road[n0] ? capacityOf(roadClass[n0], junction[n0]) : 0;
+      const c1 = n1 >= 0 && road[n1] ? capacityOf(roadClass[n1], junction[n1]) : 0;
+      const c2 = n2 >= 0 && road[n2] ? capacityOf(roadClass[n2], junction[n2]) : 0;
+      const c3 = n3 >= 0 && road[n3] ? capacityOf(roadClass[n3], junction[n3]) : 0;
       total = c0 + c1 + c2 + c3;
       if (total === 0) continue;
       const moving = load[i] * RELAX_SHARE;
@@ -152,7 +152,7 @@ export function stepTraffic(
   let worst = 0;
   for (let k = 0; k < roadCount; k++) {
     const i = roads[k];
-    const cap = capacityOf(roadClass[i]);
+    const cap = capacityOf(roadClass[i], junction[i]);
     if (cap === 0) continue;
     const ratio = load[i] / cap;
     if (ratio > worst) worst = ratio;

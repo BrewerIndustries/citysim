@@ -8,6 +8,7 @@
  * Only recomputed when roads change, not every tick.
  */
 import type { Grid } from './grid.ts';
+import { throughputOf } from './junctions.ts';
 import type { Tiles } from './tiles.ts';
 
 /** A cell must be within this many cells of a road to develop. */
@@ -62,14 +63,33 @@ export const ROAD_CLASS_BY_ID = new Map(ROAD_CLASSES.map((c) => [c.id, c]));
 export const ROAD_CLASS_BY_KEY = new Map(ROAD_CLASSES.map((c) => [c.key, c]));
 export const DEFAULT_ROAD_CLASS = 1;
 
-/** Capacity of whatever is on this tile, or 0 if there is no road. */
-export function capacityOf(cls: number): number {
-  return ROAD_CLASS_BY_ID.get(cls)?.capacity ?? 0;
+/**
+ * Capacity of whatever is on this tile, or 0 if there is no road.
+ *
+ * A junction multiplies it, because a junction is worth more than the tiles it is made
+ * of — which is the entire reason to build one rather than let two roads cross.
+ */
+export function capacityOf(cls: number, junction = 0): number {
+  return (CAPACITY[cls] ?? 0) * throughputOf(junction);
 }
+
+/** Capacity by class id, flat for the same reason THROUGHPUT is. Index 0 is no road. */
+const CAPACITY: number[] = (() => {
+  const out = new Array<number>(Math.max(0, ...ROAD_CLASSES.map((c) => c.id)) + 1).fill(0);
+  for (const c of ROAD_CLASSES) out[c.id] = c.capacity;
+  return out;
+})();
+
+/** Frontage by class id, flat. Called once per cell by the road-distance search. */
+const FRONTAGE: boolean[] = (() => {
+  const out = new Array<boolean>(Math.max(0, ...ROAD_CLASSES.map((c) => c.id)) + 1).fill(false);
+  for (const c of ROAD_CLASSES) out[c.id] = c.frontage;
+  return out;
+})();
 
 /** Whether buildings may take access from the road on this tile. */
 export function hasFrontage(cls: number): boolean {
-  return ROAD_CLASS_BY_ID.get(cls)?.frontage ?? false;
+  return FRONTAGE[cls] ?? false;
 }
 
 export function recomputeRoadDistance(grid: Grid, tiles: Tiles, queue: Int32Array): void {

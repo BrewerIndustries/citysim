@@ -99,6 +99,9 @@ export function parseHex(hex: string): number {
 export const ROAD_COLOUR: Record<number, number> =
   Object.fromEntries(ROAD_CLASSES.map((c) => [c.id, parseHex(c.colour)]));
 
+/** Junction tiles read brighter than the road they are made of, so a stamp is visible. */
+export const JUNCTION_MARK = parseHex('#a8b0c4');
+
 export const CIVIC_COLOUR: Record<number, number> = Object.fromEntries(
   CIVIC_DEFS.map((d) => [d.id, parseHex(d.colour)]),
 );

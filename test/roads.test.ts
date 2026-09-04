@@ -8,7 +8,9 @@ import {
 } from '../src/sim/roads.ts';
 import { tripsAt, TRIPS_PER_STEP, CONGESTED } from '../src/sim/traffic.ts';
 import { LAND_VALUE_TERMS } from '../src/sim/sim.ts';
-import { lineCells } from '../src/app/tools.ts';
+import { lineCells, curveCells } from '../src/app/tools.ts';
+import { JUNCTIONS, JUNCTION_BY_KEY } from '../src/sim/junctions.ts';
+import { serialize, deserialize } from '../src/sim/save.ts';
 
 const street = ROAD_CLASS_BY_KEY.get('street')!;
 const avenue = ROAD_CLASS_BY_KEY.get('avenue')!;
@@ -200,4 +202,185 @@ test('a line to nowhere is no cells, not an infinite loop', () => {
   // And a real line still works.
   assert.equal(lineCells(10, 10, 14, 10, 256).length, 5);
   assert.equal(lineCells(10, 10, 10, 10, 256).length, 1, 'a click is one cell');
+});
+
+// ---------------------------------------------------------------- curves
+test('a curve sweeps the corner a line would turn square', () => {
+  const line = lineCells(2, 2, 20, 12, 256);
+  const curve = curveCells(2, 2, 20, 12, 256);
+  assert.ok(curve.length > 0);
+  assert.equal(curve[0], 2 * 256 + 2, 'it should start where you pressed');
+  assert.equal(curve[curve.length - 1], 12 * 256 + 20, 'and end where you released');
+  // The elbow is the one cell a square turn must pass through and a curve must not.
+  const elbow = 2 * 256 + 20;
+  assert.ok(line.includes(elbow), 'the line turns at the corner');
+  assert.ok(!curve.includes(elbow), 'the curve should cut it');
+});
+
+test('a curve is 4-connected, or it is a road with gaps in it', () => {
+  // The distance search, the utility flood and the traffic relaxation all walk
+  // orthogonally, so a diagonal step is a break in the network, not a shortcut.
+  for (const [ax, ay, bx, by] of [[2, 2, 20, 12], [30, 5, 5, 30], [10, 40, 40, 10], [8, 8, 9, 30]]) {
+    const cells = curveCells(ax, ay, bx, by, 256);
+    for (let n = 1; n < cells.length; n++) {
+      const dx = Math.abs((cells[n] % 256) - (cells[n - 1] % 256));
+      const dy = Math.abs(Math.floor(cells[n] / 256) - Math.floor(cells[n - 1] / 256));
+      assert.equal(dx + dy, 1, `step ${n} of the curve ${ax},${ay}->${bx},${by} is not orthogonal`);
+    }
+  }
+});
+
+test('a curve never repeats a cell', () => {
+  const cells = curveCells(4, 4, 40, 26, 256);
+  assert.equal(new Set(cells).size, cells.length, 'a cell paid for twice is a cell paid for twice');
+});
+
+test('a curve to nowhere is no cells', () => {
+  assert.deepEqual(curveCells(NaN, 2, 20, 12, 256), []);
+  assert.deepEqual(curveCells(2, 2, -5, 12, 256), []);
+});
+
+// ---------------------------------------------------------------- junctions
+test('every junction is a connected shape that fits its footprint', () => {
+  for (const j of JUNCTIONS) {
+    assert.ok(j.cells.length > 0, `${j.label} has no cells`);
+    for (const [x, y] of j.cells) {
+      assert.ok(x >= 0 && x < j.size && y >= 0 && y < j.size,
+        `${j.label} has a cell at ${x},${y} outside its ${j.size}x${j.size} footprint`);
+    }
+    // 4-connected as one piece: a junction in two halves is two roads.
+    const key = (x: number, y: number) => `${x},${y}`;
+    const all = new Set(j.cells.map(([x, y]) => key(x, y)));
+    const seen = new Set<string>();
+    const stack = [j.cells[0]];
+    while (stack.length) {
+      const [x, y] = stack.pop()!;
+      if (seen.has(key(x, y))) continue;
+      seen.add(key(x, y));
+      for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]] as const) {
+        if (all.has(key(nx, ny)) && !seen.has(key(nx, ny))) stack.push([nx, ny]);
+      }
+    }
+    assert.equal(seen.size, all.size, `${j.label} is not one connected piece`);
+  }
+});
+
+test('a junction carries more than the same tiles would alone', () => {
+  // Otherwise it is decoration, and there would be no reason to build one.
+  for (const j of JUNCTIONS) {
+    assert.ok(j.throughput > 1, `${j.label} does nothing`);
+    assert.equal(capacityOf(street.id, j.id), street.capacity * j.throughput);
+  }
+  assert.equal(capacityOf(street.id, 0), street.capacity, 'no junction, no bonus');
+});
+
+test('placing a junction lays its roads and marks them', () => {
+  const c = city();
+  const j = JUNCTION_BY_KEY.get('roundabout')!;
+  const before = c.funds;
+  const anchor = c.grid.index(40, 40);
+  const quoted = c.junctionCost(anchor, j.id, street.id);
+  assert.ok(c.placeJunction(anchor, j.id, street.id).ok);
+  assert.equal(Math.round(before - c.funds), Math.round(quoted), 'the quote should be the price');
+
+  for (const [dx, dy] of j.cells) {
+    const i = c.grid.index(40 + dx, 40 + dy);
+    assert.equal(c.tiles.road[i], 1, `no road at ${dx},${dy}`);
+    assert.equal(c.tiles.roadClass[i], street.id);
+    assert.equal(c.tiles.junction[i], j.id);
+  }
+  // The middle of a roundabout is not road.
+  assert.equal(c.tiles.road[c.grid.index(42, 42)], 0, 'the island should stay clear');
+});
+
+test('a junction that will not fit is refused before a penny is spent', () => {
+  const c = city();
+  const j = JUNCTION_BY_KEY.get('crossover')!;
+  const funds = c.funds;
+  const r = c.placeJunction(c.grid.index(126, 126), j.id, street.id);
+  assert.equal(r.ok, false);
+  assert.match(r.error ?? '', /fit/);
+  assert.equal(c.funds, funds, 'a refused junction must be free');
+});
+
+test('drawing a plain road through a junction takes it apart', () => {
+  // What is left should be road, not a roundabout with a bite out of it still claiming
+  // its throughput.
+  const c = city();
+  const j = JUNCTION_BY_KEY.get('roundabout')!;
+  assert.ok(c.placeJunction(c.grid.index(40, 40), j.id, street.id).ok);
+  const [dx, dy] = j.cells[0];
+  const i = c.grid.index(40 + dx, 40 + dy);
+  assert.equal(c.tiles.junction[i], j.id);
+  assert.ok(c.buildRoad(i, avenue.id));
+  assert.equal(c.tiles.junction[i], 0, 'the junction marking should go with it');
+});
+
+test('removing a junction road takes its marking too', () => {
+  const c = city();
+  const j = JUNCTION_BY_KEY.get('roundabout')!;
+  assert.ok(c.placeJunction(c.grid.index(40, 40), j.id, street.id).ok);
+  const [dx, dy] = j.cells[0];
+  const i = c.grid.index(40 + dx, 40 + dy);
+  assert.ok(c.removeAt(i, 'road'));
+  assert.equal(c.tiles.junction[i], 0);
+  assert.equal(c.tiles.roadClass[i], 0);
+});
+
+test('a junction survives a save round trip, bonus included', () => {
+  const c = city();
+  const j = JUNCTION_BY_KEY.get('crossover')!;
+  assert.ok(c.placeJunction(c.grid.index(40, 40), j.id, avenue.id).ok);
+  const restored = deserialize(serialize(c)).city;
+  const i = restored.grid.index(40 + j.cells[0][0], 40 + j.cells[0][1]);
+  assert.equal(restored.tiles.junction[i], j.id, 'a reloaded city should keep its junctions');
+  assert.equal(capacityOf(restored.tiles.roadClass[i], restored.tiles.junction[i]),
+    avenue.capacity * j.throughput);
+});
+
+test('a roundabout relieves the crossing it replaces', () => {
+  const build = (withJunction: boolean) => {
+    const c = city();
+    const g = c.grid;
+    for (let x = 20; x < 60; x++) c.buildRoad(g.index(x, 40), street.id);
+    for (let y = 22; y < 58; y++) c.buildRoad(g.index(40, y), street.id);
+    if (withJunction) c.placeJunction(g.index(38, 38), JUNCTION_BY_KEY.get('roundabout')!.id, street.id);
+    for (let y = 36; y < 45; y++) {
+      for (let x = 22; x < 58; x++) {
+        if (c.tiles.road[g.index(x, y)]) continue;
+        const i = g.index(x, y);
+        c.paintZone(i, ZONE_COM, 2);
+        c.tiles.level[i] = 4;
+      }
+    }
+    for (let t = 0; t < 4; t++) c.step();
+    return c.traffic.congestedTiles;
+  };
+  assert.ok(build(true) < build(false), 'the roundabout should carry what the crossing could not');
+});
+
+test('stamping a junction rebuilds the intersection under it', () => {
+  // Otherwise the old crossing roads survive inside the island, and what you have is not
+  // a roundabout, it is a roundabout with a road through the middle.
+  const c = city();
+  const g = c.grid;
+  for (let x = 30; x < 60; x++) c.buildRoad(g.index(x, 42), street.id);
+  for (let y = 30; y < 60; y++) c.buildRoad(g.index(42, y), street.id);
+  const j = JUNCTION_BY_KEY.get('roundabout')!;
+  assert.ok(c.placeJunction(g.index(40, 40), j.id, street.id).ok);
+
+  const shape = new Set(j.cells.map(([dx, dy]) => g.index(40 + dx, 40 + dy)));
+  for (let dy = 0; dy < j.size; dy++) {
+    for (let dx = 0; dx < j.size; dx++) {
+      const i = g.index(40 + dx, 40 + dy);
+      if (shape.has(i)) {
+        assert.equal(c.tiles.junction[i], j.id, `${dx},${dy} should be the junction`);
+      } else {
+        assert.equal(c.tiles.road[i], 0, `${dx},${dy} is inside the island and should be clear`);
+      }
+    }
+  }
+  // And the roads either side of it are untouched.
+  assert.equal(c.tiles.road[g.index(30, 42)], 1);
+  assert.equal(c.tiles.road[g.index(59, 42)], 1);
 });

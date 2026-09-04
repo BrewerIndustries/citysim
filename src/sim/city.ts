@@ -13,6 +13,7 @@ import {
 import {
   stepTraffic, recomputeNearestRoad, listRoads, EMPTY_TRAFFIC, type TrafficReport,
 } from './traffic.ts';
+import { JUNCTION_BY_ID } from './junctions.ts';
 import { UtilityGrid, POWER, WATER, SEWAGE, type UtilityReport } from './utility.ts';
 import { stepGrowth, tallyCity, requiredDesirability, type GrowthStats } from './growth.ts';
 import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
@@ -813,6 +814,9 @@ export class City {
     }
     this.roadUpkeep += def.upkeep;
     t.roadClass[i] = cls;
+    // Drawing a plain road through a junction takes the junction apart: what is left is
+    // road, not a roundabout with a bite out of it still claiming its throughput.
+    t.junction[i] = 0;
     t.zone[i] = 0;
     t.level[i] = 0;
     this.recordChange(i);
@@ -862,6 +866,94 @@ export class City {
    * safe to offer as the default. Naming a single target is how you pull a sewer out
    * from under a road you want to keep.
    */
+  /**
+   * Lay a junction: its road cells at the given class, and the junction marking that
+   * makes them carry more than the same tiles would on their own.
+   *
+   * All or nothing. A junction half-placed around an obstruction is not a junction, it
+   * is a puzzle, so the site is checked before a penny is spent.
+   */
+  placeJunction(anchor: number, junctionId: number, cls: number): { ok: boolean; error?: string } {
+    const j = JUNCTION_BY_ID.get(junctionId);
+    const def = ROAD_CLASS_BY_ID.get(cls);
+    if (!j || !def) return { ok: false, error: 'unknown junction' };
+    const { width, height } = this.grid;
+    const ax = anchor & (width - 1);
+    const ay = anchor >>> this.grid.shift;
+    if (ax < 0 || ay < 0 || ax + j.size > width || ay + j.size > height) {
+      return { ok: false, error: 'it does not fit on the map' };
+    }
+
+    let price = j.premium;
+    for (const [dx, dy] of j.cells) {
+      const i = this.grid.index(ax + dx, ay + dy);
+      if (this.terrain.water[i]) return { ok: false, error: 'part of the site is under water' };
+      if (this.tiles.civic[i]) return { ok: false, error: 'the site is occupied' };
+      const existing = this.tiles.road[i]
+        ? (ROAD_CLASS_BY_ID.get(this.tiles.roadClass[i])?.cost ?? 0) : 0;
+      price += Math.max(0, def.cost - existing);
+    }
+    if (!this.canAfford(price)) return { ok: false, error: `costs $${Math.round(price)}` };
+
+    this.spend(price);
+
+    // Clear whatever ran through the footprint but is not part of the shape. Stamping a
+    // roundabout over a crossroads otherwise leaves the old crossing roads running
+    // through the island, which is not a roundabout, it is a roundabout with a road
+    // through the middle. Placing a junction rebuilds that intersection.
+    const shape = new Set(j.cells.map(([dx, dy]) => this.grid.index(ax + dx, ay + dy)));
+    for (let dy = 0; dy < j.size; dy++) {
+      for (let dx = 0; dx < j.size; dx++) {
+        const i = this.grid.index(ax + dx, ay + dy);
+        if (shape.has(i) || !this.tiles.road[i]) continue;
+        this.history.touch(this.tiles, i);
+        this.roadUpkeep -= ROAD_CLASS_BY_ID.get(this.tiles.roadClass[i])?.upkeep ?? 0;
+        this.tiles.road[i] = 0;
+        this.tiles.roadClass[i] = 0;
+        this.tiles.junction[i] = 0;
+        this.roadCells--;
+        this.recordChange(i);
+      }
+    }
+
+    for (const [dx, dy] of j.cells) {
+      const i = this.grid.index(ax + dx, ay + dy);
+      this.history.touch(this.tiles, i);
+      if (!this.tiles.road[i]) {
+        this.tiles.road[i] = 1;
+        this.roadCells++;
+      } else {
+        this.roadUpkeep -= ROAD_CLASS_BY_ID.get(this.tiles.roadClass[i])?.upkeep ?? 0;
+      }
+      this.roadUpkeep += def.upkeep;
+      this.tiles.roadClass[i] = cls;
+      this.tiles.junction[i] = j.id;
+      this.tiles.zone[i] = 0;
+      this.tiles.level[i] = 0;
+      this.recordChange(i);
+    }
+    this.markRoadsDirty();
+    return { ok: true };
+  }
+
+  /** What a junction of this shape would cost here, for the interface to show. */
+  junctionCost(anchor: number, junctionId: number, cls: number): number {
+    const j = JUNCTION_BY_ID.get(junctionId);
+    const def = ROAD_CLASS_BY_ID.get(cls);
+    if (!j || !def) return 0;
+    const { width } = this.grid;
+    const ax = anchor & (width - 1);
+    const ay = anchor >>> this.grid.shift;
+    let price = j.premium;
+    for (const [dx, dy] of j.cells) {
+      const i = this.grid.index(ax + dx, ay + dy);
+      const existing = this.tiles.road[i]
+        ? (ROAD_CLASS_BY_ID.get(this.tiles.roadClass[i])?.cost ?? 0) : 0;
+      price += Math.max(0, def.cost - existing);
+    }
+    return price;
+  }
+
   removeAt(i: number, target: RemoveTarget): boolean {
     if (target === 'road') return this.removeRoad(i);
     if (target !== 'all') return this.removeUtility(i, target);
@@ -998,6 +1090,7 @@ export class City {
     this.roadUpkeep -= ROAD_CLASS_BY_ID.get(t.roadClass[i])?.upkeep ?? 0;
     t.road[i] = 0;
     t.roadClass[i] = 0;
+    t.junction[i] = 0;
     this.roadCells--;
     this.markRoadsDirty();
     return true;
@@ -1096,6 +1189,7 @@ export class City {
     if (t.road[i]) {
       this.roadUpkeep -= ROAD_CLASS_BY_ID.get(t.roadClass[i])?.upkeep ?? 0;
       t.roadClass[i] = 0;
+      t.junction[i] = 0;
       this.roadCells--;
       this.markRoadsDirty();
     }

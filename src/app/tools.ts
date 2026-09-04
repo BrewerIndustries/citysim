@@ -4,9 +4,10 @@ import {
   type RemoveTarget,
 } from '../sim/city.ts';
 import { ROAD_CLASSES } from '../sim/roads.ts';
+import { JUNCTIONS, JUNCTION_BY_ID } from '../sim/junctions.ts';
 
 export type ToolKind =
-  | 'inspect' | 'road' | 'remove' | 'zone' | 'civic' | 'bulldoze'
+  | 'inspect' | 'road' | 'junction' | 'remove' | 'zone' | 'civic' | 'bulldoze'
   | 'powerline' | 'pipe' | 'sewer';
 
 /**
@@ -28,6 +29,8 @@ export interface Tool {
   kind: ToolKind;
   /** Which class of road this lays. Road tools only. */
   roadClass?: number;
+  /** Which junction this stamps. Junction tools only. */
+  junctionId?: number;
   label: string;
   key: string;
   cost: number;
@@ -133,6 +136,18 @@ export const TOOLS: Tool[] = assignKeys([
     note: c.note,
   })),
 
+  ...JUNCTIONS.map((j) => ({
+    id: `junction-${j.key}`,
+    kind: 'junction' as const,
+    label: j.label,
+    key: '',
+    cost: j.premium,
+    junctionId: j.id,
+    colour: '#7a8296',
+    group: 'Roads',
+    note: j.note,
+  })),
+
   { id: 'powerline', kind: 'powerline', label: 'Power line', key: '', cost: LINE_COST, colour: '#e0c65a', group: 'Utilities' },
   { id: 'pipe', kind: 'pipe', label: 'Water pipe', key: '', cost: PIPE_COST, colour: '#4fa3c8', group: 'Utilities' },
   { id: 'sewer', kind: 'sewer', label: 'Sewer', key: '', cost: PIPE_COST, colour: '#8f7a4a', group: 'Utilities' },
@@ -169,11 +184,12 @@ export const DENSITY_LABELS = ['Low', 'Med', 'High'];
  * Roads default to lines and zoning to rectangles, because that is what each is almost
  * always used for; pencil stays available for both.
  */
-export type DrawMode = 'pencil' | 'line' | 'rectangle';
+export type DrawMode = 'pencil' | 'line' | 'curve' | 'rectangle';
 
 export const DRAW_MODES: ReadonlyArray<{ mode: DrawMode; label: string; hint: string }> = [
   { mode: 'pencil', label: 'Free', hint: 'Follow the cursor exactly' },
   { mode: 'line', label: 'Line', hint: 'Straight run from press to release' },
+  { mode: 'curve', label: 'Curve', hint: 'Sweeps round the corner instead of turning square' },
   { mode: 'rectangle', label: 'Rect', hint: 'Fill the box between press and release' },
 ];
 
@@ -181,10 +197,12 @@ export const DRAW_MODES: ReadonlyArray<{ mode: DrawMode; label: string; hint: st
 export function modesFor(kind: ToolKind): { modes: DrawMode[]; preferred: DrawMode } {
   switch (kind) {
     case 'road':
+      return { modes: ['line', 'curve', 'pencil', 'rectangle'], preferred: 'line' };
     case 'remove':
     case 'powerline':
     case 'pipe':
     case 'sewer':
+      // Curves are for roads. A curved pipe is the same pipe, drawn slower.
       return { modes: ['line', 'pencil', 'rectangle'], preferred: 'line' };
     case 'zone':
     case 'bulldoze':
@@ -228,6 +246,52 @@ export function lineCells(
   } else {
     for (let y = ay; y !== by + stepY; y += stepY) cells.push(y * width + ax);
     for (let x = ax + stepX; x !== bx + stepX; x += stepX) cells.push(by * width + x);
+  }
+  return cells;
+}
+
+/**
+ * A curved run from A to B, as a quadratic Bezier through the elbow.
+ *
+ * The control point is the corner `lineCells` would have turned at, so a curve is the
+ * same drag as a line — press, release — just rounded off. That matters: needing a third
+ * click to place a control point would make curves something you do deliberately rather
+ * than something you reach for.
+ *
+ * The result is forced to be 4-CONNECTED. A rasterised curve naturally produces diagonal
+ * steps, and a road network that steps diagonally is not connected: the distance search,
+ * the utility flood and the traffic relaxation all walk orthogonally, so a diagonal road
+ * is a road with a gap in it.
+ */
+export function curveCells(
+  ax: number, ay: number, bx: number, by: number, width: number,
+): number[] {
+  if (!isCell(ax) || !isCell(ay) || !isCell(bx) || !isCell(by)) return [];
+  // Same elbow lineCells would use, so line and curve agree about which way they bend.
+  const horizontalFirst = Math.abs(bx - ax) >= Math.abs(by - ay);
+  const cx = horizontalFirst ? bx : ax;
+  const cy = horizontalFirst ? ay : by;
+
+  const span = Math.abs(bx - ax) + Math.abs(by - ay);
+  const steps = Math.max(1, span * 2);
+  const cells: number[] = [];
+  let px = ax;
+  let py = ay;
+  const push = (x: number, y: number) => {
+    const i = y * width + x;
+    if (cells[cells.length - 1] !== i) cells.push(i);
+  };
+  push(ax, ay);
+  for (let s = 1; s <= steps; s++) {
+    const t = s / steps;
+    const u = 1 - t;
+    const x = Math.round(u * u * ax + 2 * u * t * cx + t * t * bx);
+    const y = Math.round(u * u * ay + 2 * u * t * cy + t * t * by);
+    if (x === px && y === py) continue;
+    // Fill the orthogonal steps between the last cell and this one. Rounding a curve can
+    // move both axes at once, and a road that only touches at a corner is not a road.
+    while (px !== x) { px += px < x ? 1 : -1; push(px, py); }
+    while (py !== y) { py += py < y ? 1 : -1; push(px, py); }
   }
   return cells;
 }

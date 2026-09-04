@@ -15,6 +15,8 @@ import { SEPTIC_MAX_LEVEL } from '../src/sim/growth.ts';
 import { requiredDesirability } from '../src/sim/growth.ts';
 import { LAND_VALUE_TERMS } from '../src/sim/sim.ts';
 import { WORLD_WORKS } from '../src/sim/works.ts';
+import { ROAD_CLASSES } from '../src/sim/roads.ts';
+import { JUNCTIONS } from '../src/sim/junctions.ts';
 import { NEUTRAL_TAX } from '../src/sim/demand.ts';
 
 const manual = buildManual();
@@ -213,4 +215,15 @@ test('the manual documents every world work and both sides of every fork', () =>
   }
   assert.match(w, /one of each per city/i);
   assert.match(w, /closes the other off permanently/i);
+});
+
+test('the manual documents the road ladder, curves and junctions', () => {
+  const r = text(section('roads'));
+  for (const c of ROAD_CLASSES) {
+    assert.ok(r.includes(c.label), `the roads section omits ${c.label}`);
+    assert.ok(r.includes(String(c.capacity)), `${c.label} does not say what it carries`);
+  }
+  assert.match(r, /nothing can be built off a motorway/i);
+  assert.match(r, /curve/i);
+  for (const j of JUNCTIONS) assert.ok(r.includes(j.label), `the roads section omits ${j.label}`);
 });

@@ -21,6 +21,7 @@ import { REMOVE_TARGETS } from './tools.ts';
 import { WORLD_WORKS, siblingOf } from '../sim/works.ts';
 import { ROAD_CLASSES } from '../sim/roads.ts';
 import { TRIPS_PER_STEP } from '../sim/traffic.ts';
+import { JUNCTIONS } from '../sim/junctions.ts';
 import { WASTE_PER_STEP, RECYCLE_MAX_CUT, FREE_DISPOSAL } from '../sim/waste.ts';
 import { SERIES, HISTORY_LIMIT, type SeriesKey } from '../sim/history-series.ts';
 import { MAX_UNDO } from '../sim/history.ts';
@@ -185,6 +186,22 @@ export function buildManual(): ManualSection[] {
         difference in price, so a street becomes an avenue without bulldozing the corridor
         and losing everything fronting onto it. Drawing a narrower one downgrades it for
         free.</p>
+        <h4>Curves and junctions</h4>
+        <p>The <b>Curve</b> draw mode bends a run round its corner instead of turning it
+        square. It is the same drag as a line — press and release — with the corner used as
+        the control point, so a curved street costs you nothing but choosing the mode.</p>
+        <p><b>Junctions</b> are placed as a single stamp, and they are not decoration: a
+        signalled crossroads is where a road's capacity goes to die, so a junction
+        <b>multiplies the capacity of every tile it occupies</b>. That is the answer when
+        the Traffic layer shows a corridor jamming at its intersections rather than along
+        its length. They are built from whichever road class you last used, so a roundabout
+        on your arterials is arterial-grade without asking.</p>
+        ${table(['Junction', 'Size', 'Carries', 'Premium', 'What it is for'],
+          JUNCTIONS.map((j) => [
+            j.label, `${j.size}×${j.size}`, `×${j.throughput}`, money(j.premium), j.note,
+          ]))}
+        <p>Drawing a plain road back through a junction takes it apart — what is left is
+        road, not a roundabout with a bite out of it still claiming its throughput.</p>
         <h4>Traffic</h4>
         <p>Every developed tile generates trips and hands them to the nearest road it could
         pull out onto. Load then spreads a few tiles along the network, pulled towards

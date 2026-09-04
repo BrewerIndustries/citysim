@@ -18,7 +18,7 @@ import { ACHIEVEMENTS } from './achievements.ts';
 
 const MAGIC = 0x4354534d; // "CTSM"
 const END_MAGIC = 0x454e4421; // "END!"
-export const SAVE_VERSION = 9;
+export const SAVE_VERSION = 10;
 
 /** Planes written to disk, in order. Derived planes are deliberately absent. */
 const PLANES: Array<keyof Tiles & string> = [
@@ -30,6 +30,8 @@ const PLANES_V6: Array<keyof Tiles & string> = ['powerLine', 'pipe'];
 const PLANES_V7: Array<keyof Tiles & string> = ['sewer'];
 /** Added in v9, when a road stopped being one thing. */
 const PLANES_V9: Array<keyof Tiles & string> = ['roadClass'];
+/** Added in v10, with junctions. Absent in older saves simply means none were built. */
+const PLANES_V10: Array<keyof Tiles & string> = ['junction'];
 
 /** Ticks of field simulation run after loading, to regenerate the derived state. */
 export const SETTLE_TICKS = 14;
@@ -171,6 +173,7 @@ export function serialize(city: City): Uint8Array {
   for (const name of PLANES_V6) writePlane(w, city.tiles[name] as Uint8Array);
   for (const name of PLANES_V7) writePlane(w, city.tiles[name] as Uint8Array);
   for (const name of PLANES_V9) writePlane(w, city.tiles[name] as Uint8Array);
+  for (const name of PLANES_V10) writePlane(w, city.tiles[name] as Uint8Array);
   // Sentinel. If the reader and writer ever fall out of step, this fails with "reader
   // and writer disagree" instead of a misleading complaint about corrupt tile planes —
   // which is exactly how the achievements block was first noticed to be misplaced.
@@ -256,8 +259,14 @@ export function deserialize(bytes: Uint8Array): LoadResult {
   if (version >= 7) {
     for (const name of PLANES_V7) readPlane(r, city.tiles[name] as Uint8Array);
   }
+  // Order here must match the writer exactly, appended block by appended block. Reading
+  // v10 before v9 is the same mistake the END sentinel was added to catch, and it caught
+  // it again.
   if (version >= 9) {
     for (const name of PLANES_V9) readPlane(r, city.tiles[name] as Uint8Array);
+    if (version >= 10) {
+      for (const name of PLANES_V10) readPlane(r, city.tiles[name] as Uint8Array);
+    }
   } else {
     // Every road in an older save was a two-lane street, because that was the only kind
     // there was. Left at 0 they would have no class, and a road with no class has no

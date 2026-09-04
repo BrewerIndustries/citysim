@@ -310,6 +310,8 @@ export class Tiles {
    * until someone adds class 0 back.
    */
   readonly roadClass: Uint8Array;
+  /** Which junction occupies this tile, if any. See JUNCTIONS in junctions.ts. */
+  readonly junction: Uint8Array;
   /** 1 if a power line runs here. Lines may share a tile with a road. */
   readonly powerLine: Uint8Array;
   /** 1 if a water pipe runs here. Pipes may share a tile with a road or a line. */
@@ -343,7 +345,7 @@ export class Tiles {
 
   constructor(grid: Grid) {
     const n = grid.size;
-    const planes = 15;
+    const planes = 16;
     this.buffer = new ArrayBuffer(n * planes);
     let o = 0;
     const plane = () => {
@@ -355,6 +357,7 @@ export class Tiles {
     this.density = plane();
     this.road = plane();
     this.roadClass = plane();
+    this.junction = plane();
     this.powerLine = plane();
     this.pipe = plane();
     this.sewer = plane();

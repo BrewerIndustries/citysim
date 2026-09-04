@@ -5,13 +5,14 @@ import { View3D } from './view3d.ts';
 import { LAYERS, RAMPS, buildLut, toggleLayer } from './palette.ts';
 import {
   TOOLS, TABS, DENSITY_LABELS, DRAW_MODES, REMOVE_TARGETS, tabOfGroup, lineCells,
-  brushCells, rectCells, anchorFor, modesFor, type Tool, type DrawMode,
+  curveCells, brushCells, rectCells, anchorFor, modesFor, type Tool, type DrawMode,
 } from './tools.ts';
 import { REASON, REASON_TEXT, requiredDesirability } from '../sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { ZONE_LABEL, CIVIC_BY_ID, MAX_LEVEL } from '../sim/tiles.ts';
 import type { RemoveTarget } from '../sim/city.ts';
 import { DEFAULT_ROAD_CLASS } from '../sim/roads.ts';
+import { JUNCTION_BY_ID } from '../sim/junctions.ts';
 import { buildManual, type ManualSection } from './manual.ts';
 import { writeSlot, readSlot, describeSlot, clearSlot } from './storage.ts';
 import { Chart } from './chart.ts';
@@ -93,6 +94,13 @@ const act = (a: Action) => post({ type: 'act', action: a, strokeId, label: undoL
  * its own tells you nothing a month later — which of the five things it removes did it
  * take? — so the target is folded in.
  */
+/**
+ * The class of road a junction is built from. Set by whichever road tool you last used,
+ * so a roundabout on your arterials is arterial-grade without a second control to set:
+ * you have already said what kind of road you are working with.
+ */
+let junctionRoadClass = DEFAULT_ROAD_CLASS;
+
 /** The class a road tool lays. Defaults to a street so a missing id cannot lay nothing. */
 function roadClassOf(t: Tool): number {
   return t.roadClass ?? DEFAULT_ROAD_CLASS;
@@ -261,6 +269,7 @@ function selectTool(t: Tool): void {
   tool = t;
   // A keyboard shortcut can reach a tool whose tab is not showing; follow it there
   // rather than leaving the rail pointing somewhere else.
+  if (t.kind === 'road' && t.roadClass) junctionRoadClass = t.roadClass;
   const tab = tabOfGroup(t.group);
   if (tab && tab !== activeTab) setTab(tab);
   for (const b of document.querySelectorAll<HTMLElement>('.tool')) {
@@ -286,7 +295,11 @@ function selectTool(t: Tool): void {
   else if (t.kind === 'sewer') showNetworkLayer('sewerNetwork');
 
   const civicDef = t.civicId ? CIVIC_BY_ID.get(t.civicId) : null;
-  brush = t.kind === 'zone' || t.kind === 'bulldoze' ? 3 : civicDef ? civicDef.size : 1;
+  const junctionDef = t.junctionId ? JUNCTION_BY_ID.get(t.junctionId) : undefined;
+  brush = t.kind === 'zone' || t.kind === 'bulldoze' ? 3
+    : civicDef ? civicDef.size
+    : junctionDef ? junctionDef.size
+    : 1;
   if (t.kind === 'powerline' || t.kind === 'pipe' || t.kind === 'sewer') brush = 1;
   if (t.kind === 'remove') brush = 1;
   for (const row of document.querySelectorAll<HTMLElement>('.densities.targets')) {
@@ -759,6 +772,9 @@ function previewFor(cell: { x: number; y: number }): number[] {
   if (drawMode === 'rectangle') {
     return rectCells(anchor.x, anchor.y, cell.x, cell.y, MAP_SIZE, MAP_SIZE);
   }
+  if (drawMode === 'curve') {
+    return curveCells(anchor.x, anchor.y, cell.x, cell.y, MAP_SIZE);
+  }
   return lineCells(anchor.x, anchor.y, cell.x, cell.y, MAP_SIZE);
 }
 
@@ -809,6 +825,15 @@ function applyAt(cell: { x: number; y: number }): void {
     case 'bulldoze':
       act({ kind: 'bulldoze', cells: brushCells(cell.x, cell.y, brush, MAP_SIZE, MAP_SIZE) });
       break;
+    case 'junction': {
+      // Stamped like a building: centred under the cursor, anchored top-left, one click.
+      const a = anchorFor(cell.x, cell.y, brush);
+      act({
+        kind: 'junction', cell: a.y * MAP_SIZE + a.x,
+        junction: tool.junctionId!, roadClass: junctionRoadClass,
+      });
+      break;
+    }
     case 'civic': {
       // The preview rect is drawn CENTRED on the cursor, but placeCivic anchors at the
       // footprint's top-left. Without converting here, a 3x3 school and 4x4 plant landed

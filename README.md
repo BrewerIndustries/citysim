@@ -159,7 +159,23 @@ space-drag to pan.
   pipes and sewers while leaving zoning and buildings alone. Clears everything on a tile
   by default; a target row narrows it to one network when you need to pull a sewer out
   from under a street you are keeping.
-- **Draw modes** — free-hand, line, or rectangle. Roads default to lines, zoning to
+- **Workspace tabs** — seven tabs across the top split the rail by the job at hand rather
+  than showing all forty-six tools at once. Inspect, Remove and Bulldoze stay in every tab.
+- **Roads with classes** — Street, Avenue, Arterial, Motorway, at two to eight lanes. Per
+  unit of capacity a motorway is the efficient buy, exactly as in reality; what stops you
+  paving everything wide is the absolute bill for capacity a cul-de-sac will never use. And
+  **nothing can be built off a motorway** — it grants no frontage at all and has to be fed
+  by arterials. Drawing a wider class over an existing road upgrades it for the difference.
+- **Traffic, without pathfinding** — every developed cell hands its trips to the road it
+  would pull out onto, then load spreads a few steps along the network towards spare
+  capacity. That second pass is what makes a wide road *relieve* the streets feeding it.
+  Congestion is load over capacity, and a negative term in land value a few tiles either
+  side. Nothing is ever routed from an origin to a destination.
+- **Curves and junctions** — a Curve draw mode that sweeps a run round its corner instead
+  of turning it square, and roundabouts and crossovers placed as stamps. A junction is not
+  decoration: it multiplies the capacity of the tiles it occupies, which is the answer when
+  a corridor jams at its intersections rather than along its length.
+- **Draw modes** — free-hand, line, curve, or rectangle. Roads default to lines, zoning to
   rectangles; nothing is built until the drag ends, so the shape can be adjusted first.
 - **Two views over one simulation** (`Tab`) — the top-down Plan Mode you build in, and an
   orthographic ¾ view with real terrain and rotation. Buildings are untextured massing
@@ -178,7 +194,7 @@ space-drag to pan.
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 192 tests
+npm test          # 226 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 
