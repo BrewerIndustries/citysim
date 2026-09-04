@@ -11,8 +11,8 @@
 import type { Camera } from './camera.ts';
 import type { Snapshot } from './protocol.ts';
 import {
-  GROUND, GROUND_ALT, ROAD, ROAD_COLOUR, JUNCTION_MARK, UNPOWERED, ZONE_TINT, GRID_LINE,
-  DEVELOPED_OUTLINE,
+  GROUND, GROUND_ALT, ROAD, ROAD_COLOUR, JUNCTION_MARK, LEVEL_LIFT, ROAD_HIGH,
+  UNPOWERED, ZONE_TINT, GRID_LINE, DEVELOPED_OUTLINE,
   WATER_DEEP, WATER_SHALLOW, SHORE, mix, buildingColour, CIVIC_COLOUR,
   POWER_LINE, PIPE_LINE, SEWER_LINE, POWER_REACH, PIPE_REACH, SEWER_REACH,
   DEAD_UTILITY, SOURCE_MARK,
@@ -92,7 +92,7 @@ export class CityRenderer {
     const px = this.pixels!;
     const gw = this.gridWidth;
     const {
-      zone, density, road, roadClass, junction, level, civic, powered, watered, sewered,
+      zone, density, road, roadClass, roadLevel, junction, level, civic, powered, watered, sewered,
       powerLine, pipe, sewer,
     } = snap;
     const nets = this.networks;
@@ -119,6 +119,10 @@ export class CityRenderer {
           // Wider roads read lighter, so the hierarchy of the network is visible without
           // turning on a layer to see it.
           c = ROAD_COLOUR[roadClass[i]] ?? ROAD;
+          // Height reads as brightness: a raised carriageway is visibly above the one it
+          // crosses rather than merging into it.
+          const lift = LEVEL_LIFT[roadLevel[i]] ?? 0;
+          if (lift > 0) c = mix(c, ROAD_HIGH, lift);
           // A junction is worth more than the tiles it is made of, so it should not look
           // identical to them.
           if (junction[i]) c = mix(c, JUNCTION_MARK, 0.55);

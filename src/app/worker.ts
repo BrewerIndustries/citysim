@@ -120,7 +120,7 @@ function monthName(m: number): string { return MONTHS[m] ?? ''; }
 
 function apply(c: City, a: import('./protocol.ts').Action): void {
   switch (a.kind) {
-    case 'road': for (const i of a.cells) c.buildRoad(i, a.roadClass); break;
+    case 'road': for (const i of a.cells) c.buildRoad(i, a.roadClass, a.roadLevel); break;
     case 'junction': {
       const r = c.placeJunction(a.cell, a.junction, a.roadClass);
       if (!r.ok && r.error) c.pushMessage(`Can't build there — ${r.error}.`);
@@ -195,6 +195,7 @@ function loop(): void {
     density: new Uint8Array(t.density),
     road: new Uint8Array(t.road),
     roadClass: new Uint8Array(t.roadClass),
+    roadLevel: new Uint8Array(t.roadLevel),
     junction: new Uint8Array(t.junction),
     powerLine: new Uint8Array(t.powerLine),
     pipe: new Uint8Array(t.pipe),
@@ -208,7 +209,7 @@ function loop(): void {
   };
   lastSeriesMonth = c.month;
   const transfer: Transferable[] = [
-    snap.zone.buffer, snap.density.buffer, snap.road.buffer, snap.roadClass.buffer, snap.junction.buffer,
+    snap.zone.buffer, snap.density.buffer, snap.road.buffer, snap.roadClass.buffer, snap.roadLevel.buffer, snap.junction.buffer,
     snap.level.buffer, snap.civic.buffer, snap.powered.buffer,
     snap.powerLine.buffer, snap.pipe.buffer, snap.watered.buffer,
     snap.sewer.buffer, snap.sewered.buffer,

@@ -39,6 +39,7 @@ export interface Snapshot {
   density: Uint8Array;
   road: Uint8Array;
   roadClass: Uint8Array;
+  roadLevel: Uint8Array;
   junction: Uint8Array;
   powerLine: Uint8Array;
   pipe: Uint8Array;
@@ -95,7 +96,7 @@ export type ToWorker =
   | { type: 'redo' };
 
 export type Action =
-  | { kind: 'road'; cells: number[]; roadClass: number }
+  | { kind: 'road'; cells: number[]; roadClass: number; roadLevel: number }
   | { kind: 'junction'; cell: number; junction: number; roadClass: number }
   | { kind: 'remove'; cells: number[]; target: import('../sim/city.ts').RemoveTarget }
   | { kind: 'utility'; cells: number[]; utility: 'powerLine' | 'pipe' | 'sewer' }

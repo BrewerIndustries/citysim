@@ -24,6 +24,12 @@ export interface Junction {
   /** Road cells, as [dx, dy] from the top-left of the footprint. */
   cells: ReadonlyArray<readonly [number, number]>;
   /**
+   * How high each cell sits, if the junction is not all on the ground. A crossover is
+   * grade-separated by definition: one carriageway goes over the other, which on a tile
+   * grid is exactly what levels are for.
+   */
+  levelAt?: (dx: number, dy: number, size: number) => number;
+  /**
    * Multiplier on the capacity of every tile it occupies. This is the whole point of
    * building one: the junction is worth more than the tiles it is made of.
    */
@@ -34,22 +40,50 @@ export interface Junction {
 }
 
 /**
- * A hollow ring of road `size` across: the roundabout, at tile scale.
+ * A hollow ring of road `size` across: the roundabout.
  *
- * The corners stay. Cutting them makes a rounder-looking ring and a broken one — the
- * cells either side of a cut corner meet only diagonally, so the "roundabout" is four
- * disconnected arcs that no network search will ever walk between. On a square grid a
- * ring you can drive round is a square ring; what makes it a roundabout is the
- * throughput, not the silhouette.
+ * Drawn as a circle rather than a square, then REPAIRED into a 4-connected loop. That
+ * second step is not optional. A rasterised circle turns corners diagonally, and every
+ * search in the game — road distance, the utility flood, the traffic relaxation — walks
+ * orthogonally, so a diagonally-jointed ring is not one ring, it is four arcs nothing can
+ * drive between. The first version of this cut the corners off a square to look rounder
+ * and produced exactly that.
+ *
+ * The repair inserts the shared orthogonal neighbour of any diagonal pair, choosing
+ * whichever of the two sits closest to the ring's radius so the loop stays round instead
+ * of growing a bulge.
  */
 function ring(size: number): Array<readonly [number, number]> {
-  const cells: Array<readonly [number, number]> = [];
+  const c = (size - 1) / 2;
+  const r = c;
+  const dist = (x: number, y: number) => Math.hypot(x - c, y - c);
+  const inRing = new Set<string>();
+  const key = (x: number, y: number) => `${x},${y}`;
+
+  // A band around the radius, wide enough to be a continuous circle at this scale.
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      if (x === 0 || y === 0 || x === size - 1 || y === size - 1) cells.push([x, y]);
+      const d = dist(x, y);
+      if (d <= r + 0.45 && d >= r - 0.95) inRing.add(key(x, y));
     }
   }
-  return cells;
+
+  // Repair: every diagonal step needs an orthogonal cell to go through.
+  for (const cell of [...inRing]) {
+    const [x, y] = cell.split(',').map(Number);
+    for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!inRing.has(key(nx, ny))) continue;
+      if (inRing.has(key(nx, y)) || inRing.has(key(x, ny))) continue;
+      const a: readonly [number, number] = [nx, y];
+      const b: readonly [number, number] = [x, ny];
+      const pick = Math.abs(dist(a[0], a[1]) - r) <= Math.abs(dist(b[0], b[1]) - r) ? a : b;
+      inRing.add(key(pick[0], pick[1]));
+    }
+  }
+
+  return [...inRing].map((k) => k.split(',').map(Number) as [number, number]);
 }
 
 /**
@@ -73,12 +107,20 @@ function crossover(size: number): Array<readonly [number, number]> {
 }
 
 export const JUNCTIONS: readonly Junction[] = [
-  { id: 1, key: 'roundabout', label: 'Roundabout', size: 5, cells: ring(5),
-    throughput: 1.4, premium: 260,
+  { id: 1, key: 'roundabout', label: 'Roundabout', size: 7, cells: ring(7),
+    throughput: 1.4, premium: 340,
     note: 'Keeps traffic moving through a crossing instead of stopping it' },
   { id: 2, key: 'crossover', label: 'Crossover', size: 7, cells: crossover(7),
     throughput: 1.9, premium: 1400,
-    note: 'Grade-separated. Expensive, and the only thing that saves a jammed arterial' },
+    // The north-south carriageways ride two levels up, so they cross the east-west ones
+    // rather than joining them — a real interchange rather than a wide crossroads. Two
+    // levels, not one, because that is the clearance a road needs to pass underneath.
+    levelAt: (dx, dy, size) => {
+      const mid = (size - 1) / 2;
+      const onEastWest = dy === mid - 1 || dy === mid + 1;
+      return onEastWest ? 0 : 2;
+    },
+    note: 'Grade-separated: north-south rides over east-west. The answer to a jammed arterial' },
 ];
 
 export const JUNCTION_BY_ID = new Map(JUNCTIONS.map((j) => [j.id, j]));

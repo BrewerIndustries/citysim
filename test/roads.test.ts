@@ -5,6 +5,7 @@ import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { ZONE_RES, ZONE_COM } from '../src/sim/tiles.ts';
 import {
   ROAD_CLASSES, ROAD_CLASS_BY_KEY, ROAD_REACH, DEFAULT_ROAD_CLASS, hasFrontage, capacityOf,
+  ROAD_LEVELS, roadCost, roadUpkeep, levelsConnect, passesUnder,
 } from '../src/sim/roads.ts';
 import { tripsAt, TRIPS_PER_STEP, CONGESTED } from '../src/sim/traffic.ts';
 import { LAND_VALUE_TERMS } from '../src/sim/sim.ts';
@@ -383,4 +384,125 @@ test('stamping a junction rebuilds the intersection under it', () => {
   // And the roads either side of it are untouched.
   assert.equal(c.tiles.road[g.index(30, 42)], 1);
   assert.equal(c.tiles.road[g.index(59, 42)], 1);
+});
+
+test('the roundabout is round, and still meets the roads that approach it', () => {
+  const j = JUNCTION_BY_KEY.get('roundabout')!;
+  const has = (x: number, y: number) => j.cells.some(([cx, cy]) => cx === x && cy === y);
+  const n = j.size - 1;
+  // Round means the corners of the bounding box are NOT road. A square ring passes the
+  // connectivity test perfectly well and is not a roundabout.
+  for (const [x, y] of [[0, 0], [n, 0], [0, n], [n, n]] as const) {
+    assert.equal(has(x, y), false, `corner ${x},${y} should be outside a round ring`);
+  }
+  // And the cardinal points must be, or an approach road on the centre line misses it.
+  const mid = n / 2;
+  for (const [x, y] of [[mid, 0], [0, mid], [n, mid], [mid, n]] as const) {
+    assert.ok(has(x, y), `the ring should reach ${x},${y} for the road approaching there`);
+  }
+  // A hollow ring: nothing in the middle.
+  assert.equal(has(mid, mid), false, 'the island should be an island');
+});
+
+// ---------------------------------------------------------------- elevation
+test('height costs more to build and more to keep', () => {
+  for (let l = 1; l < ROAD_LEVELS.length; l++) {
+    assert.ok(ROAD_LEVELS[l].costMul > ROAD_LEVELS[l - 1].costMul, `level ${l} should cost more`);
+    assert.ok(roadCost(street.id, l) > roadCost(street.id, l - 1));
+    assert.ok(roadUpkeep(street.id, l) > roadUpkeep(street.id, l - 1));
+  }
+  assert.equal(roadCost(street.id, 0), street.cost, 'ground level is the sticker price');
+});
+
+test('roads join a neighbour within a level, and pass under one two above', () => {
+  assert.ok(levelsConnect(0, 0));
+  assert.ok(levelsConnect(0, 1), 'a ramp meets the ground');
+  assert.ok(!levelsConnect(0, 2), 'a deck two up is not the same road');
+  assert.ok(passesUnder(0, 2), 'and a ground road goes underneath it');
+  assert.ok(!passesUnder(0, 1), 'one level is a ramp, not a bridge');
+});
+
+test('nothing fronts onto a raised road', () => {
+  const c = city();
+  const g = c.grid;
+  for (let x = 20; x < 50; x++) assert.ok(c.buildRoad(g.index(x, 30), street.id, 2));
+  c.step();
+  assert.equal(c.tiles.roadDist[g.index(35, 31)], 255, 'a flyover grants no access');
+
+  for (let x = 20; x < 50; x++) assert.ok(c.buildRoad(g.index(x, 33), street.id, 0));
+  c.step();
+  assert.ok(c.tiles.roadDist[g.index(35, 32)] <= ROAD_REACH, 'the ground street does');
+});
+
+test('an elevated crossing does not sever the road beneath it', () => {
+  // The whole point of an overpass. Without the pass-under rule an elevated carriageway
+  // would cut every road it crossed, which is the opposite of what it is for.
+  const carried = (crossLevel: number) => {
+    const c = city();
+    const g = c.grid;
+    for (let x = 20; x < 60; x++) c.buildRoad(g.index(x, 40), street.id, 0);
+    for (let y = 20; y < 60; y++) c.buildRoad(g.index(40, y), street.id, crossLevel);
+    for (let y = 37; y < 44; y++) {
+      for (let x = 22; x < 38; x++) {
+        if (c.tiles.road[g.index(x, y)]) continue;
+        const i = g.index(x, y);
+        c.paintZone(i, ZONE_COM, 2);
+        c.tiles.level[i] = 4;
+      }
+    }
+    for (let t = 0; t < 4; t++) c.step();
+    // Load reaching the far side of the crossing means the street got through.
+    return c.traffic.worst;
+  };
+  // A ground crossroads and an elevated flyover should both leave the street usable.
+  assert.ok(carried(0) > 0, 'a ground crossing carries traffic');
+  assert.ok(carried(2) > 0, 'and so does the street under a flyover');
+});
+
+test('the crossover is genuinely grade separated', () => {
+  const j = JUNCTION_BY_KEY.get('crossover')!;
+  assert.ok(j.levelAt, 'a crossover that is all on one level is just a wide crossroads');
+  const levels = new Set(j.cells.map(([dx, dy]) => j.levelAt!(dx, dy, j.size)));
+  assert.ok(levels.size > 1, 'its carriageways should not all be at the same height');
+  assert.ok([...levels].some((a) => [...levels].some((b) => passesUnder(a, b))),
+    'and the difference should be enough for one to pass under the other');
+});
+
+test('a placed junction carries its levels onto the map', () => {
+  const c = city();
+  const j = JUNCTION_BY_KEY.get('crossover')!;
+  assert.ok(c.placeJunction(c.grid.index(40, 40), j.id, street.id).ok);
+  for (const [dx, dy] of j.cells) {
+    const i = c.grid.index(40 + dx, 40 + dy);
+    assert.equal(c.tiles.roadLevel[i], j.levelAt!(dx, dy, j.size), `level wrong at ${dx},${dy}`);
+  }
+});
+
+test('removing a road puts its height back on the ground', () => {
+  const c = city();
+  const i = c.grid.index(40, 40);
+  assert.ok(c.buildRoad(i, street.id, 3));
+  assert.equal(c.tiles.roadLevel[i], 3);
+  assert.ok(c.removeAt(i, 'road'));
+  assert.equal(c.tiles.roadLevel[i], 0, 'a cleared tile must not remember it was high');
+  assert.equal(c.ledgerRoadUpkeep, 0);
+});
+
+test('changing only the height of a road is a real change', () => {
+  const c = city();
+  const i = c.grid.index(40, 40);
+  assert.ok(c.buildRoad(i, street.id, 0));
+  const funds = c.funds;
+  assert.ok(c.buildRoad(i, street.id, 2), 'raising an existing road should be allowed');
+  assert.equal(c.tiles.roadLevel[i], 2);
+  assert.equal(Math.round(funds - c.funds), Math.round(roadCost(street.id, 2) - roadCost(street.id, 0)));
+  assert.equal(c.buildRoad(i, street.id, 2), false, 'and re-laying the same thing is not');
+});
+
+test('road height survives a save round trip', () => {
+  const c = city();
+  const i = c.grid.index(40, 40);
+  assert.ok(c.buildRoad(i, street.id, 2));
+  const restored = deserialize(serialize(c)).city;
+  assert.equal(restored.tiles.roadLevel[i], 2, 'a reloaded city should keep its flyovers');
 });

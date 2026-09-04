@@ -24,7 +24,7 @@
 import type { Grid } from './grid.ts';
 import type { Tiles } from './tiles.ts';
 import { ZONE_RES, ZONE_COM, ZONE_IND } from './tiles.ts';
-import { capacityOf, hasFrontage } from './roads.ts';
+import { capacityOf, hasFrontage, levelsConnect, passesUnder } from './roads.ts';
 
 /**
  * Trips generated per level-density step, by zone.
@@ -94,7 +94,7 @@ export function stepTraffic(
   roadCount: number,
 ): TrafficReport {
   const { width, height, size } = grid;
-  const { zone, level, density, road, roadClass, junction } = tiles;
+  const { zone, level, density, road, roadClass, junction, roadLevel } = tiles;
   // Cleared and walked through the compacted list, not the grid: roads are a thin
   // skeleton over a mostly empty map, and scanning every cell three times a tick to find
   // them cost more than the whole rest of the pass.
@@ -125,16 +125,33 @@ export function stepTraffic(
       if (load[i] === 0) continue;
       const x = i & (width - 1);
       const y = i >>> grid.shift;
-      let total = 0;
-      const n0 = x > 0 ? i - 1 : -1;
-      const n1 = x < width - 1 ? i + 1 : -1;
-      const n2 = y > 0 ? i - width : -1;
-      const n3 = y < height - 1 ? i + width : -1;
-      const c0 = n0 >= 0 && road[n0] ? capacityOf(roadClass[n0], junction[n0]) : 0;
-      const c1 = n1 >= 0 && road[n1] ? capacityOf(roadClass[n1], junction[n1]) : 0;
-      const c2 = n2 >= 0 && road[n2] ? capacityOf(roadClass[n2], junction[n2]) : 0;
-      const c3 = n3 >= 0 && road[n3] ? capacityOf(roadClass[n3], junction[n3]) : 0;
-      total = c0 + c1 + c2 + c3;
+      // Where a neighbour is a deck two or more levels up, traffic does not join it —
+      // it carries on UNDERNEATH to the tile beyond, which is what an overpass is for.
+      // Without this, every elevated crossing would sever the road it crossed.
+      const mine = roadLevel[i];
+      const step = (dir: number, limit: boolean): number => {
+        if (!limit) return -1;
+        const n = i + dir;
+        if (!road[n]) return -1;
+        if (levelsConnect(mine, roadLevel[n])) return n;
+        if (!passesUnder(mine, roadLevel[n])) return -1;
+        const beyond = n + dir;
+        const inBounds = dir === -1 ? (n & (width - 1)) > 0
+          : dir === 1 ? (n & (width - 1)) < width - 1
+          : dir === -width ? n >= width
+          : n < size - width;
+        if (!inBounds || !road[beyond] || !levelsConnect(mine, roadLevel[beyond])) return -1;
+        return beyond;
+      };
+      const n0 = step(-1, x > 0);
+      const n1 = step(1, x < width - 1);
+      const n2 = step(-width, y > 0);
+      const n3 = step(width, y < height - 1);
+      const c0 = n0 >= 0 ? capacityOf(roadClass[n0], junction[n0]) : 0;
+      const c1 = n1 >= 0 ? capacityOf(roadClass[n1], junction[n1]) : 0;
+      const c2 = n2 >= 0 ? capacityOf(roadClass[n2], junction[n2]) : 0;
+      const c3 = n3 >= 0 ? capacityOf(roadClass[n3], junction[n3]) : 0;
+      const total = c0 + c1 + c2 + c3;
       if (total === 0) continue;
       const moving = load[i] * RELAX_SHARE;
       next[i] -= moving;
@@ -185,12 +202,12 @@ export function listRoads(grid: Grid, tiles: Tiles, out: Int32Array): number {
  */
 export function recomputeNearestRoad(grid: Grid, tiles: Tiles, nearest: Int32Array, queue: Int32Array): void {
   const { width, height, size } = grid;
-  const { road, roadClass, roadDist } = tiles;
+  const { road, roadClass, roadLevel, roadDist } = tiles;
   nearest.fill(-1);
   let head = 0;
   let tail = 0;
   for (let i = 0; i < size; i++) {
-    if (road[i] && hasFrontage(roadClass[i])) {
+    if (road[i] && hasFrontage(roadClass[i]) && roadLevel[i] === 0) {
       nearest[i] = i;
       queue[tail++] = i;
     }

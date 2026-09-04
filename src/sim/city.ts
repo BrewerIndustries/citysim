@@ -9,6 +9,7 @@ import { Simulation, LAND_VALUE_BASE } from './sim.ts';
 import { Tiles, CIVIC_BY_ID, CIVIC_DEFS, ZONE_RES, ZONE_COM, ZONE_IND, MAX_LEVEL } from './tiles.ts';
 import {
   recomputeRoadDistance, ROAD_REACH, ROAD_CLASS_BY_ID, DEFAULT_ROAD_CLASS,
+  MAX_ROAD_LEVEL, roadCost, roadUpkeep as roadUpkeepOf,
 } from './roads.ts';
 import {
   stepTraffic, recomputeNearestRoad, listRoads, EMPTY_TRAFFIC, type TrafficReport,
@@ -243,7 +244,7 @@ export class City {
     for (let i = 0; i < road.length; i++) {
       if (road[i]) {
         roads++;
-        roadUpkeep += ROAD_CLASS_BY_ID.get(this.tiles.roadClass[i])?.upkeep ?? ROAD_UPKEEP;
+        roadUpkeep += roadUpkeepOf(this.tiles.roadClass[i], this.tiles.roadLevel[i]);
       }
       if (powerLine[i]) this.utilityCells.powerLine++;
       if (pipe[i]) this.utilityCells.pipe++;
@@ -794,15 +795,15 @@ export class City {
    * everything fronting onto it. Drawing a narrower one downgrades for free — you are
    * not owed a refund for taking lanes away, but you should be allowed to.
    */
-  buildRoad(i: number, cls: number = DEFAULT_ROAD_CLASS): boolean {
+  buildRoad(i: number, cls: number = DEFAULT_ROAD_CLASS, level = 0): boolean {
     const t = this.tiles;
     const def = ROAD_CLASS_BY_ID.get(cls);
-    if (!def) return false;
+    if (!def || level < 0 || level > MAX_ROAD_LEVEL) return false;
     if (t.civic[i] || this.terrain.water[i]) return false;
-    if (t.road[i] && t.roadClass[i] === cls) return false;
+    if (t.road[i] && t.roadClass[i] === cls && t.roadLevel[i] === level) return false;
 
-    const existing = t.road[i] ? (ROAD_CLASS_BY_ID.get(t.roadClass[i])?.cost ?? 0) : 0;
-    const price = Math.max(0, def.cost - existing);
+    const existing = t.road[i] ? roadCost(t.roadClass[i], t.roadLevel[i]) : 0;
+    const price = Math.max(0, roadCost(cls, level) - existing);
     if (!this.canAfford(price)) return false;
     this.history.touch(t, i);
     this.spend(price);
@@ -810,10 +811,11 @@ export class City {
       t.road[i] = 1;
       this.roadCells++;
     } else {
-      this.roadUpkeep -= ROAD_CLASS_BY_ID.get(t.roadClass[i])?.upkeep ?? 0;
+      this.roadUpkeep -= roadUpkeepOf(t.roadClass[i], t.roadLevel[i]);
     }
-    this.roadUpkeep += def.upkeep;
+    this.roadUpkeep += roadUpkeepOf(cls, level);
     t.roadClass[i] = cls;
+    t.roadLevel[i] = level;
     // Drawing a plain road through a junction takes the junction apart: what is left is
     // road, not a roundabout with a bite out of it still claiming its throughput.
     t.junction[i] = 0;
@@ -889,9 +891,8 @@ export class City {
       const i = this.grid.index(ax + dx, ay + dy);
       if (this.terrain.water[i]) return { ok: false, error: 'part of the site is under water' };
       if (this.tiles.civic[i]) return { ok: false, error: 'the site is occupied' };
-      const existing = this.tiles.road[i]
-        ? (ROAD_CLASS_BY_ID.get(this.tiles.roadClass[i])?.cost ?? 0) : 0;
-      price += Math.max(0, def.cost - existing);
+      const existing = this.tiles.road[i] ? roadCost(this.tiles.roadClass[i], this.tiles.roadLevel[i]) : 0;
+      price += Math.max(0, roadCost(cls, j.levelAt?.(dx, dy, j.size) ?? 0) - existing);
     }
     if (!this.canAfford(price)) return { ok: false, error: `costs $${Math.round(price)}` };
 
@@ -907,10 +908,11 @@ export class City {
         const i = this.grid.index(ax + dx, ay + dy);
         if (shape.has(i) || !this.tiles.road[i]) continue;
         this.history.touch(this.tiles, i);
-        this.roadUpkeep -= ROAD_CLASS_BY_ID.get(this.tiles.roadClass[i])?.upkeep ?? 0;
+        this.roadUpkeep -= roadUpkeepOf(this.tiles.roadClass[i], this.tiles.roadLevel[i]);
         this.tiles.road[i] = 0;
         this.tiles.roadClass[i] = 0;
         this.tiles.junction[i] = 0;
+        this.tiles.roadLevel[i] = 0;
         this.roadCells--;
         this.recordChange(i);
       }
@@ -919,14 +921,16 @@ export class City {
     for (const [dx, dy] of j.cells) {
       const i = this.grid.index(ax + dx, ay + dy);
       this.history.touch(this.tiles, i);
+      const lvl = j.levelAt?.(dx, dy, j.size) ?? 0;
       if (!this.tiles.road[i]) {
         this.tiles.road[i] = 1;
         this.roadCells++;
       } else {
-        this.roadUpkeep -= ROAD_CLASS_BY_ID.get(this.tiles.roadClass[i])?.upkeep ?? 0;
+        this.roadUpkeep -= roadUpkeepOf(this.tiles.roadClass[i], this.tiles.roadLevel[i]);
       }
-      this.roadUpkeep += def.upkeep;
+      this.roadUpkeep += roadUpkeepOf(cls, lvl);
       this.tiles.roadClass[i] = cls;
+      this.tiles.roadLevel[i] = lvl;
       this.tiles.junction[i] = j.id;
       this.tiles.zone[i] = 0;
       this.tiles.level[i] = 0;
@@ -947,9 +951,8 @@ export class City {
     let price = j.premium;
     for (const [dx, dy] of j.cells) {
       const i = this.grid.index(ax + dx, ay + dy);
-      const existing = this.tiles.road[i]
-        ? (ROAD_CLASS_BY_ID.get(this.tiles.roadClass[i])?.cost ?? 0) : 0;
-      price += Math.max(0, def.cost - existing);
+      const existing = this.tiles.road[i] ? roadCost(this.tiles.roadClass[i], this.tiles.roadLevel[i]) : 0;
+      price += Math.max(0, roadCost(cls, j.levelAt?.(dx, dy, j.size) ?? 0) - existing);
     }
     return price;
   }
@@ -1087,10 +1090,11 @@ export class City {
     if (!this.canAfford(ROAD_REMOVE_COST)) return false;
     this.history.touch(t, i);
     this.spend(ROAD_REMOVE_COST);
-    this.roadUpkeep -= ROAD_CLASS_BY_ID.get(t.roadClass[i])?.upkeep ?? 0;
+    this.roadUpkeep -= roadUpkeepOf(t.roadClass[i], t.roadLevel[i]);
     t.road[i] = 0;
     t.roadClass[i] = 0;
     t.junction[i] = 0;
+    t.roadLevel[i] = 0;
     this.roadCells--;
     this.markRoadsDirty();
     return true;
@@ -1187,9 +1191,10 @@ export class City {
       this.markCivicsDirty();
     }
     if (t.road[i]) {
-      this.roadUpkeep -= ROAD_CLASS_BY_ID.get(t.roadClass[i])?.upkeep ?? 0;
+      this.roadUpkeep -= roadUpkeepOf(t.roadClass[i], t.roadLevel[i]);
       t.roadClass[i] = 0;
       t.junction[i] = 0;
+      t.roadLevel[i] = 0;
       this.roadCells--;
       this.markRoadsDirty();
     }

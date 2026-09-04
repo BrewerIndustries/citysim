@@ -99,6 +99,14 @@ export function parseHex(hex: string): number {
 export const ROAD_COLOUR: Record<number, number> =
   Object.fromEntries(ROAD_CLASSES.map((c) => [c.id, parseHex(c.colour)]));
 
+/**
+ * Roads get lighter the higher they are, so a crossing reads as one road passing over
+ * another rather than as a junction. Ground level is the class colour itself; each level
+ * up is mixed further towards white.
+ */
+export const LEVEL_LIFT: readonly number[] = [0, 0.22, 0.42, 0.6];
+export const ROAD_HIGH = parseHex('#e6ebf5');
+
 /** Junction tiles read brighter than the road they are made of, so a stamp is visible. */
 export const JUNCTION_MARK = parseHex('#a8b0c4');
 

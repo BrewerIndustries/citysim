@@ -11,7 +11,7 @@ import { REASON, REASON_TEXT, requiredDesirability } from '../sim/growth.ts';
 import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { ZONE_LABEL, CIVIC_BY_ID, MAX_LEVEL } from '../sim/tiles.ts';
 import type { RemoveTarget } from '../sim/city.ts';
-import { DEFAULT_ROAD_CLASS } from '../sim/roads.ts';
+import { DEFAULT_ROAD_CLASS, ROAD_LEVELS } from '../sim/roads.ts';
 import { JUNCTION_BY_ID } from '../sim/junctions.ts';
 import { buildManual, type ManualSection } from './manual.ts';
 import { writeSlot, readSlot, describeSlot, clearSlot } from './storage.ts';
@@ -100,6 +100,8 @@ const act = (a: Action) => post({ type: 'act', action: a, strokeId, label: undoL
  * you have already said what kind of road you are working with.
  */
 let junctionRoadClass = DEFAULT_ROAD_CLASS;
+/** How high the next road goes. Ground unless you say otherwise. */
+let roadLevel = 0;
 
 /** The class a road tool lays. Defaults to a street so a missing id cannot lay nothing. */
 function roadClassOf(t: Tool): number {
@@ -107,6 +109,9 @@ function roadClassOf(t: Tool): number {
 }
 
 function undoLabel(): string {
+  if (tool.kind === 'road' && roadLevel > 0) {
+    return `${tool.label} (${ROAD_LEVELS[roadLevel]?.label ?? 'raised'})`;
+  }
   if (tool.kind !== 'remove' || removeTarget === 'all') return tool.label;
   const t = REMOVE_TARGETS.find((r) => r.target === removeTarget);
   return t ? `Remove ${t.label.toLowerCase()}` : tool.label;
@@ -194,6 +199,22 @@ function buildTools(): void {
         db.onclick = (e) => { e.stopPropagation(); density = d; selectTool(t); };
         row.appendChild(db);
       });
+      row.style.display = t === tool ? 'flex' : 'none';
+      container!.appendChild(row);
+    }
+
+    if (t.kind === 'road') {
+      const row = document.createElement('div');
+      row.className = 'densities levels';
+      row.dataset.levelsFor = t.id;
+      for (const l of ROAD_LEVELS) {
+        const lb = document.createElement('button');
+        lb.textContent = l.label;
+        lb.title = `${l.note} — ×${l.costMul} to build and to keep`;
+        lb.dataset.level = String(l.level);
+        lb.onclick = (e) => { e.stopPropagation(); roadLevel = l.level; selectTool(t); };
+        row.appendChild(lb);
+      }
       row.style.display = t === tool ? 'flex' : 'none';
       container!.appendChild(row);
     }
@@ -302,6 +323,12 @@ function selectTool(t: Tool): void {
     : 1;
   if (t.kind === 'powerline' || t.kind === 'pipe' || t.kind === 'sewer') brush = 1;
   if (t.kind === 'remove') brush = 1;
+  for (const row of document.querySelectorAll<HTMLElement>('.densities.levels')) {
+    row.style.display = row.dataset.levelsFor === t.id ? 'flex' : 'none';
+    for (const b of row.querySelectorAll<HTMLElement>('button')) {
+      b.setAttribute('aria-pressed', String(Number(b.dataset.level) === roadLevel));
+    }
+  }
   for (const row of document.querySelectorAll<HTMLElement>('.densities.targets')) {
     row.style.display = row.dataset.targetsFor === t.id ? 'flex' : 'none';
     for (const b of row.querySelectorAll<HTMLElement>('button')) {
@@ -718,7 +745,7 @@ forEachCanvas((el) => el.addEventListener('pointermove', (e) => {
 
   if (tool.kind === 'road') {
     act({
-      kind: 'road', roadClass: roadClassOf(tool),
+      kind: 'road', roadClass: roadClassOf(tool), roadLevel,
       cells: lineCells(lastCell.x, lastCell.y, cell.x, cell.y, MAP_SIZE),
     });
   } else if (tool.kind === 'powerline' || tool.kind === 'pipe' || tool.kind === 'sewer') {
@@ -783,7 +810,7 @@ function commitPreview(): void {
   const cells = preview;
   if (!cells.length) return;
   switch (tool.kind) {
-    case 'road': act({ kind: 'road', cells, roadClass: roadClassOf(tool) }); break;
+    case 'road': act({ kind: 'road', cells, roadClass: roadClassOf(tool), roadLevel }); break;
     case 'remove': act({ kind: 'remove', cells, target: removeTarget }); break;
     case 'bulldoze': act({ kind: 'bulldoze', cells }); break;
     case 'zone': act({ kind: 'zone', cells, zone: tool.zone!, density }); break;
@@ -802,7 +829,7 @@ function applyAt(cell: { x: number; y: number }): void {
       post({ type: 'inspect', index: i });
       break;
     case 'road':
-      act({ kind: 'road', cells: [i], roadClass: roadClassOf(tool) });
+      act({ kind: 'road', cells: [i], roadClass: roadClassOf(tool), roadLevel });
       break;
     case 'remove':
       act({

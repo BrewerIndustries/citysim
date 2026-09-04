@@ -312,6 +312,13 @@ export class Tiles {
   readonly roadClass: Uint8Array;
   /** Which junction occupies this tile, if any. See JUNCTIONS in junctions.ts. */
   readonly junction: Uint8Array;
+  /**
+   * How high the road on this tile sits: 0 is the ground. See ROAD_LEVELS in roads.ts.
+   *
+   * A tile holds one road, so this is how two carriageways cross without becoming one
+   * junction — and how a street carries on underneath a deck two levels above it.
+   */
+  readonly roadLevel: Uint8Array;
   /** 1 if a power line runs here. Lines may share a tile with a road. */
   readonly powerLine: Uint8Array;
   /** 1 if a water pipe runs here. Pipes may share a tile with a road or a line. */
@@ -345,7 +352,7 @@ export class Tiles {
 
   constructor(grid: Grid) {
     const n = grid.size;
-    const planes = 16;
+    const planes = 17;
     this.buffer = new ArrayBuffer(n * planes);
     let o = 0;
     const plane = () => {
@@ -358,6 +365,7 @@ export class Tiles {
     this.road = plane();
     this.roadClass = plane();
     this.junction = plane();
+    this.roadLevel = plane();
     this.powerLine = plane();
     this.pipe = plane();
     this.sewer = plane();

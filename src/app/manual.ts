@@ -19,7 +19,7 @@ import { SHORE_AMENITY } from '../sim/city.ts';
 import { LAYERS, MAX_LAYERS } from './palette.ts';
 import { REMOVE_TARGETS } from './tools.ts';
 import { WORLD_WORKS, siblingOf } from '../sim/works.ts';
-import { ROAD_CLASSES } from '../sim/roads.ts';
+import { ROAD_CLASSES, ROAD_LEVELS } from '../sim/roads.ts';
 import { TRIPS_PER_STEP } from '../sim/traffic.ts';
 import { JUNCTIONS } from '../sim/junctions.ts';
 import { WASTE_PER_STEP, RECYCLE_MAX_CUT, FREE_DISPOSAL } from '../sim/waste.ts';
@@ -186,6 +186,18 @@ export function buildManual(): ManualSection[] {
         difference in price, so a street becomes an avenue without bulldozing the corridor
         and losing everything fronting onto it. Drawing a narrower one downgrades it for
         free.</p>
+        <h4>Height</h4>
+        <p>A tile holds one road, so two carriageways can never share a cell — but they can
+        pass one another. Every road has a <b>height</b>, and a road only joins a neighbour
+        within one level of itself, so an elevated deck runs over a street without merging
+        into it. Two levels of clearance is a bridge: a ground road carries straight on
+        <i>underneath</i> a deck that high, which is what an overpass is for.</p>
+        <p>Height reads as brightness on the map — the higher the road, the lighter it is.
+        <b>Nothing fronts onto a raised road</b>, for the same reason nothing fronts onto a
+        motorway: you cannot put a driveway on a flyover. Only ground-level roads give the
+        land beside them access.</p>
+        ${table(['Height', 'Cost', 'What it is for'],
+          ROAD_LEVELS.map((l) => [l.label, `×${l.costMul}`, l.note]))}
         <h4>Curves and junctions</h4>
         <p>The <b>Curve</b> draw mode bends a run round its corner instead of turning it
         square. It is the same drag as a line — press and release — with the corner used as
