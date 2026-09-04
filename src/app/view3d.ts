@@ -13,9 +13,19 @@ import { Camera3D, CELL, HEIGHT_SCALE } from './camera3d.ts';
 import type { Snapshot } from './protocol.ts';
 import { SEA_LEVEL } from '../sim/terrain.ts';
 import { CIVIC_BY_ID } from '../sim/tiles.ts';
+import { ROAD_CLASSES } from '../sim/roads.ts';
 
 /** Storeys are exaggerated slightly, like an architect's model. */
 const STOREY = 0.55;
+
+/** How far one road level lifts the deck. Enough to read as "over", not a tower. */
+const DECK_HEIGHT = 0.5;
+const DECK_TINT = new THREE.Color('#e6ebf5');
+const JUNCTION_TINT = new THREE.Color('#a8b0c4');
+
+/** Road colours by class, taken from the classes themselves so they cannot drift. */
+const ROAD_CLASS_COLOUR: Record<number, string> =
+  Object.fromEntries(ROAD_CLASSES.map((c) => [c.id, c.colour]));
 
 const ZONE_COLOUR = [
   new THREE.Color('#3a4a3c'),
@@ -237,7 +247,7 @@ export class View3D {
 
   /** Rebuild the instance buffers for whatever is on screen. */
   update(snap: Snapshot, aspect: number): void {
-    const { zone, density, level, road, civic, powered } = snap;
+    const { zone, density, level, road, roadClass, roadLevel, junction, civic, powered } = snap;
     const r = this.cam.visibleCells(aspect, this.gridW, this.gridH);
     const w = this.gridW;
 
@@ -250,11 +260,18 @@ export class View3D {
 
         if (road[i]) {
           if (rd >= MAX_ROADS) continue;
-          this.dummy.position.set(x * CELL, base, y * CELL);
-          this.dummy.scale.set(CELL, 0.08, CELL);
+          // A raised carriageway has to be raised HERE too, or a flyover renders lying on
+          // the ground passing through the road it is supposed to bridge. This view had
+          // fallen behind the simulation on all three counts: class, height and junction.
+          const lift = roadLevel[i] * DECK_HEIGHT;
+          this.dummy.position.set(x * CELL, base + lift, y * CELL);
+          this.dummy.scale.set(CELL, roadLevel[i] > 0 ? 0.14 : 0.08, CELL);
           this.dummy.updateMatrix();
           this.roads.setMatrixAt(rd, this.dummy.matrix);
-          this.roads.setColorAt(rd, ROAD_COLOUR);
+          this.colour.set(ROAD_CLASS_COLOUR[roadClass[i]] ?? '#42464e');
+          if (junction[i]) this.colour.lerp(JUNCTION_TINT, 0.5);
+          if (roadLevel[i] > 0) this.colour.lerp(DECK_TINT, 0.18 * roadLevel[i]);
+          this.roads.setColorAt(rd, this.colour);
           rd++;
           continue;
         }
