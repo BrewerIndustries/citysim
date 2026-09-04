@@ -229,13 +229,14 @@ function loop(): void {
     sewered: new Uint8Array(t.sewered),
     level: new Uint8Array(t.level),
     civic: new Uint8Array(t.civic),
+    civicAnchor: new Uint8Array(t.civicAnchor),
     powered: new Uint8Array(t.powered),
     layers, layerNames: [...layerNames],
   };
   lastSeriesMonth = c.month;
   const transfer: Transferable[] = [
     snap.zone.buffer, snap.density.buffer, snap.road.buffer, snap.roadClass.buffer, snap.roadLevel.buffer, snap.junction.buffer,
-    snap.level.buffer, snap.civic.buffer, snap.powered.buffer,
+    snap.level.buffer, snap.civic.buffer, snap.civicAnchor.buffer, snap.powered.buffer,
     snap.powerLine.buffer, snap.pipe.buffer, snap.watered.buffer,
     snap.sewer.buffer, snap.sewered.buffer,
   ];

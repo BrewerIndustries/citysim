@@ -48,6 +48,7 @@ export interface Snapshot {
   sewered: Uint8Array;
   level: Uint8Array;
   civic: Uint8Array;
+  civicAnchor: Uint8Array;
   powered: Uint8Array;
   /**
   * The field planes for the currently selected data layers, in selection order, and

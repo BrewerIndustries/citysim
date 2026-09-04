@@ -1197,6 +1197,7 @@ if (import.meta.env.DEV) {
     get renderer() { return renderer; },
     get terrain3d() { return terrain3d; },
     get viewMode() { return viewMode; },
+    get view3d() { return view3d; },
   };
 }
 

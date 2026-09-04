@@ -188,8 +188,12 @@ space-drag to pan.
 - **Draw modes** — free-hand, line, curve, or rectangle. Roads default to lines, zoning to
   rectangles; nothing is built until the drag ends, so the shape can be adjusted first.
 - **Two views over one simulation** (`Tab`) — the top-down Plan Mode you build in, and an
-  orthographic ¾ view with real terrain and rotation. Buildings are untextured massing
-  blocks: the camera and proportions get judged before any art is made.
+  orthographic ¾ view with real terrain and rotation. Surfaces are **procedural**, baked to
+  canvas at runtime rather than shipped as image files, so nothing in the art can silently
+  disagree with the code it illustrates: a road's lane markings are drawn *from its lane
+  count*, so a road cannot be painted with four lanes and simulated with six. Buildings
+  carry window rows and gravel roofs, and box faces get separate materials — a building
+  wearing its facade on the roof is the fastest way to lose the sense of scale.
 - **World works** — one-per-city buildings a mature city earns, and the only decisions in
   the game you can make exactly once. Most come in pairs — Grand Park or Grand Stadium,
   Central Station or Freight Interchange, City Hall or Courts of Justice — where building

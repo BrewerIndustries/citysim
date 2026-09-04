@@ -13,7 +13,9 @@ import { Camera3D, CELL, HEIGHT_SCALE } from './camera3d.ts';
 import type { Snapshot } from './protocol.ts';
 import { SEA_LEVEL } from '../sim/terrain.ts';
 import { CIVIC_BY_ID } from '../sim/tiles.ts';
-import { ROAD_CLASSES } from '../sim/roads.ts';
+import {
+  roadTextures, junctionTexture, facadeTexture, roofTexture, groundTexture,
+} from './textures.ts';
 
 /** Storeys are exaggerated slightly, like an architect's model. */
 const STOREY = 0.55;
@@ -23,9 +25,8 @@ const DECK_HEIGHT = 0.5;
 const DECK_TINT = new THREE.Color('#e6ebf5');
 const JUNCTION_TINT = new THREE.Color('#a8b0c4');
 
-/** Road colours by class, taken from the classes themselves so they cannot drift. */
-const ROAD_CLASS_COLOUR: Record<number, string> =
-  Object.fromEntries(ROAD_CLASSES.map((c) => [c.id, c.colour]));
+// Class colour is baked into each class's texture (see textures.ts), so there is no
+// second table here to fall out of step with the first.
 
 const ZONE_COLOUR = [
   new THREE.Color('#3a4a3c'),
@@ -63,9 +64,19 @@ export class View3D {
 
   private ground: THREE.Mesh | null = null;
   private groundColours: Float32Array | null = null;
+  /** Baked once and reused: rebuilding the ground must not re-bake its texture. */
+  private groundMap: THREE.CanvasTexture | null = null;
   private water: THREE.Mesh | null = null;
   private buildings: THREE.InstancedMesh;
-  private roads: THREE.InstancedMesh;
+  /**
+   * One mesh per road class, plus one for unmarked tiles.
+   *
+   * Instancing draws one mesh with one material, and lane markings differ per class — so
+   * a single road mesh could only ever show one lane count. Five draw calls buys a road
+   * network you can read the width of.
+   */
+  private readonly roadMeshes = new Map<number, THREE.InstancedMesh>();
+  private junctions!: THREE.InstancedMesh;
   private readonly dummy = new THREE.Object3D();
   private readonly colour = new THREE.Color();
   private hover: THREE.Mesh;
@@ -87,9 +98,12 @@ export class View3D {
     //
     // Kept deliberately dim, with the sun carrying the contrast. The first pass had both
     // turned up and everything washed out to a pale olive — a lit model, not a lit scene.
-    const sky = new THREE.HemisphereLight(0x9fbde8, 0x201f18, 0.55);
+    // Turned up from the untextured pass. A map multiplies the lit surface, so the same
+    // light that read as "sculpted" on bare Lambert reads as "dusk" once every surface
+    // has a texture on it.
+    const sky = new THREE.HemisphereLight(0x9fbde8, 0x2a281f, 0.78);
     this.scene.add(sky);
-    const sun = new THREE.DirectionalLight(0xfff0d4, 1.15);
+    const sun = new THREE.DirectionalLight(0xfff0d4, 1.55);
     sun.position.set(-0.55, 0.9, 0.35).multiplyScalar(200);
     this.scene.add(sun);
 
@@ -98,8 +112,13 @@ export class View3D {
     // NOT vertexColors: that reads a per-vertex `color` attribute the box geometry does
     // not have, and every instance renders black. Per-instance colour comes from
     // setColorAt, which three feeds in through instanceColor on its own.
+    // BoxGeometry groups are +X, -X, +Y, -Y, +Z, -Z, so a material array puts windows on
+    // the walls and a roof on the roof. Without this a building wears its facade on top,
+    // and the roof is the face a ¾ camera sees most.
+    const facade = new THREE.MeshLambertMaterial({ map: facadeTexture() });
+    const roof = new THREE.MeshLambertMaterial({ map: roofTexture() });
     this.buildings = new THREE.InstancedMesh(
-      box, new THREE.MeshLambertMaterial(), MAX_BUILDINGS,
+      box, [facade, facade, roof, roof, facade, facade], MAX_BUILDINGS,
     );
     this.buildings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.buildings.count = 0;
@@ -108,13 +127,22 @@ export class View3D {
 
     const slab = new THREE.BoxGeometry(1, 1, 1);
     slab.translate(0, 0.5, 0);
-    this.roads = new THREE.InstancedMesh(
-      slab, new THREE.MeshLambertMaterial(), MAX_ROADS,
-    );
-    this.roads.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.roads.count = 0;
-    this.roads.frustumCulled = false;
-    this.scene.add(this.roads);
+    // Same reason: the carriageway markings belong on the surface, not wrapped down the
+    // sides of an elevated deck. The sides are the concrete the deck is made of.
+    const deckSide = new THREE.MeshLambertMaterial({ color: 0x6a6e78 });
+    const roadMesh = (map: THREE.Texture): THREE.InstancedMesh => {
+      const top = new THREE.MeshLambertMaterial({ map });
+      const m = new THREE.InstancedMesh(
+        slab, [deckSide, deckSide, top, deckSide, deckSide, deckSide], MAX_ROADS,
+      );
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.count = 0;
+      m.frustumCulled = false;
+      this.scene.add(m);
+      return m;
+    };
+    for (const [id, tex] of roadTextures()) this.roadMeshes.set(id, roadMesh(tex));
+    this.junctions = roadMesh(junctionTexture());
 
     this.hover = new THREE.Mesh(
       new THREE.BoxGeometry(CELL, 0.05, CELL),
@@ -178,7 +206,14 @@ export class View3D {
     geo.computeVertexNormals();
     this.groundColours = colours;
 
-    this.ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    // Vertex colours carry the terrain and the data overlays; the map adds grain on top
+    // so open land is a surface rather than a flat fill. Repeated per tile rather than
+    // stretched over the map, or the grain would be kilometres across.
+    const detail = this.groundMap ??= groundTexture();
+    detail.repeat.set(w / 4, h / 4);
+    this.ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+      vertexColors: true, map: detail,
+    }));
     this.scene.add(this.ground);
 
     let anyWater = false;
@@ -187,8 +222,11 @@ export class View3D {
       const wgeo = new THREE.PlaneGeometry(w * CELL * 1.4, h * CELL * 1.4);
       wgeo.rotateX(-Math.PI / 2);
       wgeo.translate((w * CELL) / 2, 0, (h * CELL) / 2);
-      this.water = new THREE.Mesh(wgeo, new THREE.MeshLambertMaterial({
-        color: 0x14293e, transparent: true, opacity: 0.9,
+      // Slightly glossy and not quite opaque, so shallow water over a shelving bed reads
+      // as shallower than deep water — which matters now the player can dig their own.
+      this.water = new THREE.Mesh(wgeo, new THREE.MeshPhongMaterial({
+        color: 0x14293e, transparent: true, opacity: 0.88,
+        shininess: 70, specular: 0x2b4a68,
       }));
       this.scene.add(this.water);
     }
@@ -247,44 +285,76 @@ export class View3D {
 
   /** Rebuild the instance buffers for whatever is on screen. */
   update(snap: Snapshot, aspect: number): void {
-    const { zone, density, level, road, roadClass, roadLevel, junction, civic, powered } = snap;
+    const {
+      zone, density, level, road, roadClass, roadLevel, junction, civic, civicAnchor, powered,
+    } = snap;
     const r = this.cam.visibleCells(aspect, this.gridW, this.gridH);
     const w = this.gridW;
 
     let b = 0;
-    let rd = 0;
+    // One running count per road mesh, keyed the same way the meshes are.
+    const counts = new Map<number, number>();
+    for (const id of this.roadMeshes.keys()) counts.set(id, 0);
+    let jn = 0;
     for (let y = r.y0; y <= r.y1; y++) {
       for (let x = r.x0; x <= r.x1; x++) {
         const i = y * w + x;
         const base = this.heightAt(i);
 
         if (road[i]) {
-          if (rd >= MAX_ROADS) continue;
+          // Which way the carriageway runs, so its markings run along it rather than
+          // across it. A tile with road on both axes is a crossing, and lane markings
+          // through a crossing would be a lie — those get the unmarked surface, as does
+          // anything inside a junction.
+          const lvlHere = roadLevel[i];
+          const joins = (n: number): boolean =>
+            road[n] === 1 && Math.abs(roadLevel[n] - lvlHere) <= 1;
+          const ew = (x > r.x0 && joins(i - 1)) || (x < this.gridW - 1 && joins(i + 1));
+          const ns = (y > r.y0 && joins(i - w)) || (y < this.gridH - 1 && joins(i + w));
+          const marked = junction[i] === 0 && (ew !== ns);
+
+          const mesh = marked ? this.roadMeshes.get(roadClass[i]) : this.junctions;
+          if (!mesh) continue;
+          const slot = marked ? (counts.get(roadClass[i]) ?? 0) : jn;
+          if (slot >= MAX_ROADS) continue;
+
           // A raised carriageway has to be raised HERE too, or a flyover renders lying on
-          // the ground passing through the road it is supposed to bridge. This view had
-          // fallen behind the simulation on all three counts: class, height and junction.
-          const lift = roadLevel[i] * DECK_HEIGHT;
+          // the ground passing through the road it is supposed to bridge.
+          const lift = lvlHere * DECK_HEIGHT;
           this.dummy.position.set(x * CELL, base + lift, y * CELL);
-          this.dummy.scale.set(CELL, roadLevel[i] > 0 ? 0.14 : 0.08, CELL);
+          this.dummy.rotation.y = marked && ns ? Math.PI / 2 : 0;
+          this.dummy.scale.set(CELL, lvlHere > 0 ? 0.14 : 0.08, CELL);
           this.dummy.updateMatrix();
-          this.roads.setMatrixAt(rd, this.dummy.matrix);
-          this.colour.set(ROAD_CLASS_COLOUR[roadClass[i]] ?? '#42464e');
-          if (junction[i]) this.colour.lerp(JUNCTION_TINT, 0.5);
-          if (roadLevel[i] > 0) this.colour.lerp(DECK_TINT, 0.18 * roadLevel[i]);
-          this.roads.setColorAt(rd, this.colour);
-          rd++;
+          this.dummy.rotation.y = 0;
+          mesh.setMatrixAt(slot, this.dummy.matrix);
+          // The texture already carries the class; tinting is only for what it cannot
+          // say — that this tile is a junction, or how high it is.
+          this.colour.set(0xffffff);
+          if (junction[i]) this.colour.lerp(JUNCTION_TINT, 0.35);
+          if (lvlHere > 0) this.colour.lerp(DECK_TINT, 0.16 * lvlHere);
+          mesh.setColorAt(slot, this.colour);
+          if (marked) counts.set(roadClass[i], slot + 1);
+          else jn = slot + 1;
           continue;
         }
 
         const civicId = civic[i];
         const lvl = level[i];
         if (!civicId && lvl === 0) continue;
+        // A civic building is ONE building, not one per tile it covers. Drawing a box per
+        // cell turned a 3x3 school into nine little blocks in a grid — which read as a
+        // texture swatch rather than a building, and is the fastest way to lose the sense
+        // of scale the whole massing pass exists to establish.
+        if (civicId && !civicAnchor[i]) continue;
         if (b >= MAX_BUILDINGS) continue;
 
         let height: number;
+        let footprint = 1;
         if (civicId) {
           const def = CIVIC_BY_ID.get(civicId);
-          height = def?.supply ? 2.4 : 1.5;
+          footprint = def?.size ?? 1;
+          // Bigger buildings stand taller, or a 6x6 world work reads as a car park.
+          height = (def?.supply ? 2.4 : 1.5) * (1 + (footprint - 1) * 0.22);
           this.colour.set(def?.colour ?? '#8a8f9c');
         } else {
           // Height carries both level and density, so a high-density tower reads as a
@@ -297,8 +367,12 @@ export class View3D {
           height *= jitter;
         }
 
-        this.dummy.position.set(x * CELL, base, y * CELL);
-        this.dummy.scale.set(CELL * 0.86, Math.max(0.12, height), CELL * 0.86);
+        // A multi-tile building is centred on its whole footprint, not on its anchor
+        // cell, or it sits a tile up and left of the ground it actually occupies.
+        const span = CELL * footprint;
+        const off = ((footprint - 1) * CELL) / 2;
+        this.dummy.position.set(x * CELL + off, base, y * CELL + off);
+        this.dummy.scale.set(span * 0.9, Math.max(0.12, height), span * 0.9);
         this.dummy.updateMatrix();
         this.buildings.setMatrixAt(b, this.dummy.matrix);
         this.buildings.setColorAt(b, this.colour);
@@ -307,11 +381,16 @@ export class View3D {
     }
 
     this.buildings.count = b;
-    this.roads.count = rd;
     this.buildings.instanceMatrix.needsUpdate = true;
-    this.roads.instanceMatrix.needsUpdate = true;
     if (this.buildings.instanceColor) this.buildings.instanceColor.needsUpdate = true;
-    if (this.roads.instanceColor) this.roads.instanceColor.needsUpdate = true;
+    for (const [id, mesh] of this.roadMeshes) {
+      mesh.count = counts.get(id) ?? 0;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+    this.junctions.count = jn;
+    this.junctions.instanceMatrix.needsUpdate = true;
+    if (this.junctions.instanceColor) this.junctions.instanceColor.needsUpdate = true;
   }
 
   render(width: number, height: number): void {
