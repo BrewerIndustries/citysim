@@ -20,6 +20,11 @@ import {
 /** Storeys are exaggerated slightly, like an architect's model. */
 const STOREY = 0.55;
 
+/** Horizon and haze. Warm and pale rather than black: a night sky makes everything grim. */
+const SKY = 0x8fa6bd;
+/** Where the sun sits relative to whatever the camera is looking at. */
+const SUN_OFFSET = new THREE.Vector3(-0.55, 0.9, 0.35).multiplyScalar(260);
+
 /** How far one road level lifts the deck. Enough to read as "over", not a tower. */
 const DECK_HEIGHT = 0.5;
 const DECK_TINT = new THREE.Color('#e6ebf5');
@@ -62,6 +67,7 @@ export class View3D {
   private readonly gridH: number;
   private terrain: Terrain3D | null = null;
 
+  private readonly sun: THREE.DirectionalLight;
   private ground: THREE.Mesh | null = null;
   private groundColours: Float32Array | null = null;
   /** Baked once and reused: rebuilding the ground must not re-bake its texture. */
@@ -89,8 +95,22 @@ export class View3D {
     this.cam = new Camera3D(gridWidth, gridHeight);
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setClearColor(0x0a0c0e);
-    this.scene.background = new THREE.Color(0x0a0c0e);
+    // Filmic tone mapping rather than raw linear output. Lit surfaces clip to flat white
+    // without it, which is what makes untonemapped realtime rendering look like a render
+    // rather than a photograph of a model.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
+    // Soft shadows are the AO half of "architectural scale model". A model looks physical
+    // because things sit ON something and cast onto it; without contact shadows every
+    // building floats.
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.setClearColor(SKY);
+    this.scene.background = new THREE.Color(SKY);
+    // No fog. Depth fog is measured from the camera, and this one is orthographic sitting
+    // 1200 units back, so every visible surface is at nearly the same depth: the choice is
+    // between no effect and the entire scene uniformly fogged. Distance haze here would
+    // have to be measured from the view centre, which needs a shader, not a fog colour.
 
     // A hemisphere light does most of the work: it darkens undersides and north faces
     // the way ambient occlusion would, which is what gives simple geometry the sculpted
@@ -103,9 +123,20 @@ export class View3D {
     // has a texture on it.
     const sky = new THREE.HemisphereLight(0x9fbde8, 0x2a281f, 0.78);
     this.scene.add(sky);
-    const sun = new THREE.DirectionalLight(0xfff0d4, 1.55);
+    const sun = new THREE.DirectionalLight(0xfff0d4, 2.1);
     sun.position.set(-0.55, 0.9, 0.35).multiplyScalar(200);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    // A directional light's shadow camera is orthographic and fixed, so it has to be
+    // moved and resized to follow the view — a map-sized frustum would spread 2048 texels
+    // over kilometres and shadow nothing legibly.
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 900;
+    sun.shadow.bias = -0.0012;
+    sun.shadow.normalBias = 0.4;
+    this.sun = sun;
     this.scene.add(sun);
+    this.scene.add(sun.target);
 
     const box = new THREE.BoxGeometry(1, 1, 1);
     box.translate(0, 0.5, 0); // origin at the base, so scaling grows upward
@@ -123,6 +154,10 @@ export class View3D {
     this.buildings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.buildings.count = 0;
     this.buildings.frustumCulled = false;
+    // Buildings cast onto the ground and onto each other, and take shadow from their
+    // neighbours — a street of towers with no shadows between them reads as a diagram.
+    this.buildings.castShadow = true;
+    this.buildings.receiveShadow = true;
     this.scene.add(this.buildings);
 
     const slab = new THREE.BoxGeometry(1, 1, 1);
@@ -138,6 +173,10 @@ export class View3D {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0;
       m.frustumCulled = false;
+      // Roads take shadow but only an elevated deck casts one: a road lying on the ground
+      // casting onto the ground it lies on is just shadow acne with extra steps.
+      m.receiveShadow = true;
+      m.castShadow = true;
       this.scene.add(m);
       return m;
     };
@@ -214,6 +253,7 @@ export class View3D {
     this.ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
       vertexColors: true, map: detail,
     }));
+    this.ground.receiveShadow = true;
     this.scene.add(this.ground);
 
     let anyWater = false;
@@ -398,7 +438,28 @@ export class View3D {
     const aspect = width / height;
     this.renderer.setSize(width, height, false);
     this.cam.apply(aspect);
+    this.followShadow(aspect);
     this.renderer.render(this.scene, this.cam.camera);
+  }
+
+  /**
+   * Keep the shadow frustum over what the camera is actually looking at.
+   *
+   * Sized to the view rather than the map, and padded so buildings just off screen still
+   * cast into it — a shadow that pops in at the edge of the viewport is worse than none.
+   */
+  private followShadow(aspect: number): void {
+    const t = this.cam.target;
+    const sun = this.sun;
+    sun.target.position.copy(t);
+    sun.position.copy(t).add(SUN_OFFSET);
+    const span = this.cam.zoom * Math.max(1.6, aspect * 1.35);
+    const c = sun.shadow.camera;
+    c.left = -span;
+    c.right = span;
+    c.top = span;
+    c.bottom = -span;
+    c.updateProjectionMatrix();
   }
 
   /** Screen pixel to grid cell, by raycasting the terrain. */
