@@ -1,6 +1,6 @@
 import { CIVIC_DEFS } from '../sim/tiles.ts';
 import {
-  ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, LINE_COST, PIPE_COST,
+  ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, LINE_COST, PIPE_COST, TERRAFORM_COST,
   type RemoveTarget,
 } from '../sim/city.ts';
 import { ROAD_CLASSES } from '../sim/roads.ts';
@@ -8,7 +8,7 @@ import { JUNCTIONS, JUNCTION_BY_ID } from '../sim/junctions.ts';
 
 export type ToolKind =
   | 'inspect' | 'road' | 'junction' | 'remove' | 'zone' | 'civic' | 'bulldoze'
-  | 'powerline' | 'pipe' | 'sewer';
+  | 'powerline' | 'pipe' | 'sewer' | 'terraform';
 
 /**
  * What the Remove tool takes off a tile. `all` is the default because "remove" with a
@@ -31,6 +31,10 @@ export interface Tool {
   roadClass?: number;
   /** Which junction this stamps. Junction tools only. */
   junctionId?: number;
+  /** How many steps of height one click moves. Terraform tools only. */
+  terraform?: number;
+  /** Short note shown on hover, for tools that need one. */
+  note?: string;
   label: string;
   key: string;
   cost: number;
@@ -77,7 +81,7 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
  */
 export const TABS: ReadonlyArray<{ id: string; label: string; groups: string[]; hint: string }> = [
   { id: 'works', label: 'Public Works', hint: 'Roads, and the power, water and sewer networks',
-    groups: ['Roads', 'Utilities', 'Power', 'Water'] },
+    groups: ['Land', 'Roads', 'Utilities', 'Power', 'Water'] },
   { id: 'zoning', label: 'Zoning', hint: 'What the city is allowed to build where',
     groups: ['Zoning'] },
   { id: 'education', label: 'Education', hint: 'Schools and universities',
@@ -123,6 +127,13 @@ export const TOOLS: Tool[] = assignKeys([
   { id: 'inspect', kind: 'inspect', label: 'Inspect', key: '', cost: 0, group: 'Basics' },
   { id: 'remove', kind: 'remove', label: 'Remove', key: '', cost: ROAD_REMOVE_COST, colour: '#5c5f68', group: 'Basics' },
   { id: 'bulldoze', kind: 'bulldoze', label: 'Bulldoze', key: '', cost: BULLDOZE_COST, colour: '#8a3f38', group: 'Basics' },
+
+  { id: 'raise', kind: 'terraform' as const, label: 'Raise land', key: '', cost: TERRAFORM_COST,
+    terraform: 1, colour: '#8a9a70', group: 'Land',
+    note: 'Bare land only. Above sea level, water becomes ground' },
+  { id: 'lower', kind: 'terraform' as const, label: 'Lower land', key: '', cost: TERRAFORM_COST,
+    terraform: -1, colour: '#5a7088', group: 'Land',
+    note: 'Bare land only. Below sea level, ground becomes water' },
 
   ...ROAD_CLASSES.map((c) => ({
     id: `road-${c.key}`,
@@ -198,6 +209,9 @@ export function modesFor(kind: ToolKind): { modes: DrawMode[]; preferred: DrawMo
   switch (kind) {
     case 'road':
       return { modes: ['line', 'curve', 'pencil', 'rectangle'], preferred: 'line' };
+    case 'terraform':
+      // Shaping ground is a brush, not a line: you sculpt by going over it.
+      return { modes: ['pencil', 'rectangle'], preferred: 'pencil' };
     case 'remove':
     case 'powerline':
     case 'pipe':

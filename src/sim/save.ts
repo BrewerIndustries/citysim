@@ -18,7 +18,7 @@ import { ACHIEVEMENTS } from './achievements.ts';
 
 const MAGIC = 0x4354534d; // "CTSM"
 const END_MAGIC = 0x454e4421; // "END!"
-export const SAVE_VERSION = 11;
+export const SAVE_VERSION = 12;
 
 /** Planes written to disk, in order. Derived planes are deliberately absent. */
 const PLANES: Array<keyof Tiles & string> = [
@@ -177,6 +177,11 @@ export function serialize(city: City): Uint8Array {
   for (const name of PLANES_V9) writePlane(w, city.tiles[name] as Uint8Array);
   for (const name of PLANES_V10) writePlane(w, city.tiles[name] as Uint8Array);
   for (const name of PLANES_V11) writePlane(w, city.tiles[name] as Uint8Array);
+  // Terraforming, v12. Sparse: a city that regrades a few hundred tiles should not pay
+  // for a full 65KB height map in every save, and most cities change none at all.
+  const edits = [...city.terrain.edits];
+  w.u32(edits.length);
+  for (const [i, h] of edits) { w.u32(i); w.u8(h); }
   // Sentinel. If the reader and writer ever fall out of step, this fails with "reader
   // and writer disagree" instead of a misleading complaint about corrupt tile planes —
   // which is exactly how the achievements block was first noticed to be misplaced.
@@ -271,6 +276,14 @@ export function deserialize(bytes: Uint8Array): LoadResult {
       for (const name of PLANES_V10) readPlane(r, city.tiles[name] as Uint8Array);
       if (version >= 11) {
         for (const name of PLANES_V11) readPlane(r, city.tiles[name] as Uint8Array);
+        if (version >= 12) {
+          const n = r.u32();
+          const edits: Array<[number, number]> = [];
+          for (let k = 0; k < n; k++) edits.push([r.u32(), r.u8()]);
+          // Replayed over the freshly generated map, then everything derived from height
+          // is rebuilt — a reloaded city must have the coastline it was saved with.
+          city.terrain.applyEdits(city.grid, edits);
+        }
       }
     }
   } else {

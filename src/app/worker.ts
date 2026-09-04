@@ -47,6 +47,9 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       if (city) {
         city.beginStroke(msg.strokeId, msg.label);
         apply(city, msg.action);
+        // Reshaping the ground moves the coastline, so the client's copy of the terrain
+        // is stale the moment it happens.
+        if (msg.action.kind === 'terraform') postTerrain(city);
       }
       break;
     case 'endstroke':
@@ -114,6 +117,19 @@ function postReady(c: City): void {
   );
 }
 
+/** Resend the terrain planes after the ground has been changed. */
+function postTerrain(c: City): void {
+  const water = new Uint8Array(c.terrain.water);
+  const shore = new Uint8Array(c.terrain.shore);
+  const terrainHeight = new Uint8Array(c.terrain.height);
+  const floodRisk = new Uint8Array(c.terrain.floodRisk);
+  const waterTable = new Uint8Array(c.terrain.waterTable);
+  self.postMessage(
+    { type: 'terrain', water, shore, terrainHeight, floodRisk, waterTable },
+    [water.buffer, shore.buffer, terrainHeight.buffer, floodRisk.buffer, waterTable.buffer],
+  );
+}
+
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December'];
 function monthName(m: number): string { return MONTHS[m] ?? ''; }
@@ -121,6 +137,15 @@ function monthName(m: number): string { return MONTHS[m] ?? ''; }
 function apply(c: City, a: import('./protocol.ts').Action): void {
   switch (a.kind) {
     case 'road': for (const i of a.cells) c.buildRoad(i, a.roadClass, a.roadLevel); break;
+    case 'terraform': {
+      let error: string | null = null;
+      for (const i of a.cells) {
+        const r = c.terraform(i, a.steps);
+        if (!r.ok && r.error) error ??= r.error;
+      }
+      if (error) c.pushMessage(`Can't reshape that — ${error}.`);
+      break;
+    }
     case 'junction': {
       const r = c.placeJunction(a.cell, a.junction, a.roadClass);
       if (!r.ok && r.error) c.pushMessage(`Can't build there — ${r.error}.`);

@@ -7,7 +7,7 @@
  * the same reasoning that makes the Why Panel read LAND_VALUE_TERMS from sim.ts.
  */
 import { ROAD_REACH } from '../sim/roads.ts';
-import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, TICKS_PER_MONTH, ROAD_UPKEEP } from '../sim/city.ts';
+import { ROAD_COST, ROAD_REMOVE_COST, ZONE_COST, BULLDOZE_COST, TICKS_PER_MONTH, ROAD_UPKEEP, TERRAFORM_COST } from '../sim/city.ts';
 import { CIVIC_DEFS, MAX_LEVEL, ZONE_LABEL, ZONE_RES, ZONE_COM, ZONE_IND } from '../sim/tiles.ts';
 import { requirementText } from '../sim/unlocks.ts';
 import { requiredDesirability, REASON_TEXT, DECLINE_BELOW, DISTRESS_LIMIT, SEPTIC_MAX_LEVEL, residentsAt, jobsAt } from '../sim/growth.ts';
@@ -267,6 +267,25 @@ export function buildManual(): ManualSection[] {
         does not yet affect building, cost or drainage.</p>
         <p>Press <b>New</b> for a fresh map. Tick <b>New map is flat</b> first if you would
         rather build on open ground with no water at all.</p>`,
+    },
+    {
+      id: 'land',
+      title: 'Reshaping land',
+      html: `
+        <p>The map you are given is not the map you have to keep. <b>Raise land</b> and
+        <b>Lower land</b> reshape the ground for ${money(TERRAFORM_COST)} a tile per step, and
+        height is not decoration: <b>below sea level is water and above it is not</b>. Dig a
+        channel and it floods; fill a bay and you can build on it.</p>
+        <p>That moves more than the picture. Water cannot be built on, the waterfront is an
+        amenity worth ${SHORE_AMENITY} to the land beside it, flood risk is measured from the
+        coast, and a pump needs open water or a workable water table — so a coastline you
+        move is a decision about all four.</p>
+        <p class="tip"><b>Only bare land.</b> A tile with a road, a building, or a lot that
+        has already grown is refused rather than bulldozed: regrading under a finished
+        street is not site preparation. Clear it first if that is genuinely what you meant.</p>
+        <p>Reshaped ground is the one part of the map that is <i>yours</i> rather than
+        generated, so it is stored in your save — only the tiles you actually changed, which
+        is why a city that levels a hillside still saves in about a kilobyte.</p>`,
     },
     {
       id: 'zoning',

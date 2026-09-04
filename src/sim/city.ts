@@ -61,6 +61,11 @@ export const MESSAGE_TTL = 220;
  */
 export const CONDITION_TTL = 20;
 
+/** What one step of raising or lowering a tile costs. */
+export const TERRAFORM_COST = 14;
+/** How much height one click moves. Small enough to shape a slope, big enough to feel. */
+export const TERRAFORM_STEP = 9;
+
 /**
  * Ticks between traffic recomputations. Four, so it lands on the same rota as the
  * coverage fields and always has fresh numbers ready for the every-eight congestion pass.
@@ -963,6 +968,40 @@ export class City {
     let removed = false;
     for (const kind of UTILITY_KINDS) removed = this.removeUtility(i, kind) || removed;
     return this.removeRoad(i) || removed;
+  }
+
+  /**
+   * Raise or lower the ground.
+   *
+   * Only bare land: a tile with a road, a building or a civic on it is refused rather
+   * than having its contents destroyed. Regrading under a finished street is not site
+   * preparation, it is demolition with extra steps, and the player can always clear the
+   * tile first if that is genuinely what they want.
+   *
+   * Height is authored state once this is used, so the change is recorded for the save
+   * and the whole map's derived state — coastline, waterfront, flood risk — is brought
+   * back in line. Crossing sea level really does make land into water.
+   */
+  terraform(i: number, steps: number): { ok: boolean; error?: string } {
+    const t = this.tiles;
+    if (steps === 0) return { ok: false, error: 'nothing to do' };
+    if (t.road[i]) return { ok: false, error: 'there is a road here' };
+    if (t.civic[i]) return { ok: false, error: 'there is a building here' };
+    if (t.level[i] > 0) return { ok: false, error: 'something has been built here' };
+    if (!this.canAfford(TERRAFORM_COST)) return { ok: false, error: `costs $${TERRAFORM_COST}` };
+
+    const before = this.terrain.height[i];
+    const after = this.terrain.reshape(this.grid, i, steps * TERRAFORM_STEP);
+    if (after === before) {
+      return { ok: false, error: steps > 0 ? 'the ground is as high as it goes' : 'the ground is as low as it goes' };
+    }
+    this.spend(TERRAFORM_COST);
+    // Water blocks building and the waterfront is an amenity, so a coastline that has
+    // moved changes what every nearby cell is worth.
+    this.sourcesAllDirty = true;
+    this.markCivicsDirty();
+    this.recordChange(i);
+    return { ok: true };
   }
 
   /** Why a utility can't be laid here, for the interface to explain. */

@@ -171,6 +171,16 @@ space-drag to pan.
   capacity. That second pass is what makes a wide road *relieve* the streets feeding it.
   Congestion is load over capacity, and a negative term in land value a few tiles either
   side. Nothing is ever routed from an origin to a destination.
+- **Terraforming** — Raise and Lower reshape the ground, and height is not decoration:
+  below sea level is water and above it is not. Dig a channel and it floods; fill a bay and
+  you can build on it — which moves the coastline, the waterfront amenity, the flood map and
+  where a pump can draw from. Bare land only: a tile with a road or a building on it is
+  refused rather than bulldozed. Reshaped ground is the one authored part of the map, so it
+  is stored in the save — sparsely, as just the tiles you changed.
+- **Roads at different heights** — a road only joins a neighbour within one level of itself,
+  so an elevated deck runs over a street instead of merging into it, and two levels of
+  clearance lets the ground road carry straight on underneath. Height reads as brightness.
+  Nothing fronts onto a raised road.
 - **Curves and junctions** — a Curve draw mode that sweeps a run round its corner instead
   of turning it square, and roundabouts and crossovers placed as stamps. A junction is not
   decoration: it multiplies the capacity of the tiles it occupies, which is the answer when
@@ -194,7 +204,7 @@ space-drag to pan.
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 226 tests
+npm test          # 246 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 

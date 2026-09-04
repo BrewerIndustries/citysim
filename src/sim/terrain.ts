@@ -1,10 +1,11 @@
 /**
  * Terrain.
  *
- * Generated, not authored — so it is NOT stored in saves. The map seed is, and the
- * terrain is regenerated from it, which keeps a save at about a kilobyte. (If
- * terraforming is ever added, terrain becomes authored state and has to move into the
- * save file; the format is versioned for exactly that kind of change.)
+ * Generated, THEN authored. The map seed is stored and the terrain regenerated from it,
+ * which keeps a save at about a kilobyte; terraforming is stored on top as a sparse list
+ * of the cells the player actually changed, because a city that regrades a few hundred
+ * tiles should not pay for a full height map in every save. (This is the change the
+ * original version of this comment said the format was versioned for.)
  *
  * Fractal value noise: cheap, deterministic, and smooth enough that coastlines look
  * like coastlines rather than static.
@@ -45,6 +46,11 @@ export class Terrain {
    */
   readonly waterTable: Uint8Array;
   waterCells = 0;
+  /**
+   * Cells the player has reshaped, as index → new height. Sparse on purpose: the map is
+   * regenerated from its seed on load and only these are replayed on top.
+   */
+  readonly edits = new Map<number, number>();
 
   constructor(grid: Grid, seed: number) {
     const n = grid.size;
@@ -113,6 +119,80 @@ export class Terrain {
 
     this.computeFloodRisk(grid);
     this.computeWaterTable(grid, seed);
+  }
+
+  /**
+   * Raise or lower one cell, and bring everything derived from height back in line.
+   *
+   * Height stops being decoration here: crossing sea level turns land into water and back,
+   * which moves the coastline, the waterfront amenity, the flood map and where a pump can
+   * draw from. All of that is recomputed, because terrain the player can edit and derived
+   * state that remembers the old shape is worse than no terraforming at all.
+   *
+   * Returns the height actually reached, which is not the height asked for at the ends of
+   * the range.
+   */
+  reshape(grid: Grid, i: number, delta: number): number {
+    const next = Math.max(0, Math.min(255, this.height[i] + delta));
+    if (next === this.height[i]) return next;
+    this.height[i] = next;
+    this.edits.set(i, next);
+    this.refreshAround(grid, i);
+    return next;
+  }
+
+  /** Replay stored edits over freshly generated terrain, then rebuild what depends on them. */
+  applyEdits(grid: Grid, edits: Iterable<readonly [number, number]>): void {
+    let any = false;
+    for (const [i, h] of edits) {
+      this.height[i] = h;
+      this.edits.set(i, h);
+      any = true;
+    }
+    if (any) this.rebuildDerived(grid);
+  }
+
+  /**
+   * Water, shore and flood risk after a single-cell change.
+   *
+   * Water and shore are local — only the cell and its neighbours can change — but flood
+   * risk is a distance field, so a cell that becomes water is a new source for everything
+   * within FLOOD_REACH. Rebuilt in full rather than incrementally: terraforming is a
+   * handful of clicks a minute, not something in the tick loop.
+   */
+  private refreshAround(grid: Grid, i: number): void {
+    const wasWater = this.water[i];
+    const isWater = this.height[i] < SEA_LEVEL ? 1 : 0;
+    if (wasWater !== isWater) {
+      this.water[i] = isWater;
+      this.waterCells += isWater ? 1 : -1;
+    }
+    this.rebuildDerived(grid);
+  }
+
+  /** Everything that follows from the height map. */
+  private rebuildDerived(grid: Grid): void {
+    const { width, height: h } = grid;
+    this.waterCells = 0;
+    for (let n = 0; n < this.height.length; n++) {
+      const w = this.height[n] < SEA_LEVEL ? 1 : 0;
+      this.water[n] = w;
+      if (w) this.waterCells++;
+    }
+    this.shore.fill(0);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < width; x++) {
+        const n = y * width + x;
+        if (this.water[n]) continue;
+        const touches =
+          (x > 0 && this.water[n - 1]) ||
+          (x < width - 1 && this.water[n + 1]) ||
+          (y > 0 && this.water[n - width]) ||
+          (y < h - 1 && this.water[n + width]);
+        if (touches) this.shore[n] = 1;
+      }
+    }
+    this.computeFloodRisk(grid);
   }
 
   /**

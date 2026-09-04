@@ -317,7 +317,7 @@ function selectTool(t: Tool): void {
 
   const civicDef = t.civicId ? CIVIC_BY_ID.get(t.civicId) : null;
   const junctionDef = t.junctionId ? JUNCTION_BY_ID.get(t.junctionId) : undefined;
-  brush = t.kind === 'zone' || t.kind === 'bulldoze' ? 3
+  brush = t.kind === 'zone' || t.kind === 'bulldoze' || t.kind === 'terraform' ? 3
     : civicDef ? civicDef.size
     : junctionDef ? junctionDef.size
     : 1;
@@ -813,6 +813,7 @@ function commitPreview(): void {
     case 'road': act({ kind: 'road', cells, roadClass: roadClassOf(tool), roadLevel }); break;
     case 'remove': act({ kind: 'remove', cells, target: removeTarget }); break;
     case 'bulldoze': act({ kind: 'bulldoze', cells }); break;
+    case 'terraform': act({ kind: 'terraform', cells, steps: tool.terraform ?? 1 }); break;
     case 'zone': act({ kind: 'zone', cells, zone: tool.zone!, density }); break;
     case 'powerline': act({ kind: 'utility', cells, utility: 'powerLine' }); break;
     case 'pipe': act({ kind: 'utility', cells, utility: 'pipe' }); break;
@@ -851,6 +852,12 @@ function applyAt(cell: { x: number; y: number }): void {
       break;
     case 'bulldoze':
       act({ kind: 'bulldoze', cells: brushCells(cell.x, cell.y, brush, MAP_SIZE, MAP_SIZE) });
+      break;
+    case 'terraform':
+      act({
+        kind: 'terraform', steps: tool.terraform ?? 1,
+        cells: brushCells(cell.x, cell.y, brush, MAP_SIZE, MAP_SIZE),
+      });
       break;
     case 'junction': {
       // Stamped like a building: centred under the cursor, anchored top-left, one click.
@@ -1126,6 +1133,17 @@ worker.onmessage = (e: MessageEvent<FromWorker>) => {
     if (view3d) { view3d.dispose(); view3d = null; }
     if (viewMode === 'iso') ensure3d();
     fit();
+  } else if (msg.type === 'terrain') {
+    // Rebind rather than mutate: the renderer, the layer list and the 3D view each hold
+    // their own reference, and a coastline that moved in one of them and not the others
+    // is worse than one that did not move at all.
+    renderer.setTerrain(msg.water, msg.shore, msg.terrainHeight);
+    terrainLayers = { floodRisk: msg.floodRisk, waterTable: msg.waterTable };
+    terrain3d = {
+      water: msg.water, shore: msg.shore, height: msg.terrainHeight, floodRisk: msg.floodRisk,
+    };
+    if (activeLayers.length) rebuildOverlays();
+    if (view3d) { view3d.dispose(); view3d = null; if (viewMode === 'iso') ensure3d(); }
   } else if (msg.type === 'frame') {
     snap = msg;
     // Field planes are new objects every frame, so the overlays have to be re-bound to

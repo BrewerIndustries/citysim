@@ -70,6 +70,23 @@ export interface ReadyMsg {
   waterTable: Uint8Array;
 }
 
+/**
+ * Terrain after the player has reshaped it.
+ *
+ * Terrain used to be sent once with the map because it never changed. Terraforming makes
+ * it authored state, so it has to be resent — and every one of these planes matters: the
+ * coastline, the waterfront, the flood map and where a pump can draw from all move when
+ * the ground does.
+ */
+export interface TerrainMsg {
+  type: 'terrain';
+  water: Uint8Array;
+  shore: Uint8Array;
+  terrainHeight: Uint8Array;
+  floodRisk: Uint8Array;
+  waterTable: Uint8Array;
+}
+
 export interface InspectMsg {
   type: 'inspect';
   cell: ReturnType<import('../sim/city.ts').City['inspect']>;
@@ -78,7 +95,7 @@ export interface InspectMsg {
 export interface SavedMsg { type: 'saved'; slot: string; bytes: Uint8Array }
 export interface NoticeMsg { type: 'notice'; text: string; error?: boolean }
 
-export type FromWorker = Snapshot | ReadyMsg | InspectMsg | SavedMsg | NoticeMsg;
+export type FromWorker = Snapshot | ReadyMsg | TerrainMsg | InspectMsg | SavedMsg | NoticeMsg;
 
 export type ToWorker =
   | { type: 'init'; size: number; seed: number }
@@ -98,6 +115,7 @@ export type ToWorker =
 export type Action =
   | { kind: 'road'; cells: number[]; roadClass: number; roadLevel: number }
   | { kind: 'junction'; cell: number; junction: number; roadClass: number }
+  | { kind: 'terraform'; cells: number[]; steps: number }
   | { kind: 'remove'; cells: number[]; target: import('../sim/city.ts').RemoveTarget }
   | { kind: 'utility'; cells: number[]; utility: 'powerLine' | 'pipe' | 'sewer' }
   | { kind: 'zone'; cells: number[]; zone: number; density: number }
