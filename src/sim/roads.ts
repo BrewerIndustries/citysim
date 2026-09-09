@@ -9,6 +9,7 @@
  */
 import type { Grid } from './grid.ts';
 import { throughputOf } from './junctions.ts';
+import { controlFactor } from './controls.ts';
 import type { Tiles } from './tiles.ts';
 
 /** A cell must be within this many cells of a road to develop. */
@@ -121,8 +122,11 @@ export const DEFAULT_ROAD_CLASS = 1;
  * A junction multiplies it, because a junction is worth more than the tiles it is made
  * of — which is the entire reason to build one rather than let two roads cross.
  */
-export function capacityOf(cls: number, junction = 0): number {
-  return (CAPACITY[cls] ?? 0) * throughputOf(junction);
+export function capacityOf(cls: number, junction = 0, control = 0, crossing = false): number {
+  // A junction REPLACES the crossing penalty rather than stacking with it: a roundabout
+  // is not a crossroads with a sign on it, it is a different piece of road.
+  const at = junction ? throughputOf(junction) : controlFactor(control, crossing);
+  return (CAPACITY[cls] ?? 0) * at;
 }
 
 /** Capacity by class id, flat for the same reason THROUGHPUT is. Index 0 is no road. */

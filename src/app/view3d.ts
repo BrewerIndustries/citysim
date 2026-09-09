@@ -64,6 +64,31 @@ const MAX_ROADS = 120_000;
  */
 const Piece = { Straight: 0, Corner: 1, Junction: 2 } as const;
 
+/**
+ * How many trips one drawn car stands for.
+ *
+ * Drawing a vehicle per trip would be tens of thousands of boxes for something nobody
+ * counts. This is a sampling ratio, and the honest way to say so is in the number's name:
+ * one car on screen is TRIPS_PER_CAR trips in the simulation.
+ */
+const TRIPS_PER_CAR = 10;
+/**
+ * Cars per tile is capped low.
+ *
+ * A tile is one world unit across. Four cars on it overlap into a continuous painted
+ * stripe, which reads as a car park rather than a road — the first version did exactly
+ * that. Two spaced along the tile is legible, and a road that needs more than two is
+ * congested, which the Traffic layer says far better than a queue of boxes could.
+ */
+const MAX_CARS_PER_TILE = 2;
+const MAX_CARS = 40_000;
+/** Tiles a car covers per second. Slow enough to read as traffic, not a screensaver. */
+const CAR_SPEED = 1.6;
+const CAR_COLOURS = [
+  new THREE.Color('#d8dae0'), new THREE.Color('#3f4652'), new THREE.Color('#8a3f38'),
+  new THREE.Color('#3f6f8a'), new THREE.Color('#6f7a4a'),
+];
+
 /** Planted tiles drawn at once. Trees are cheap but there is no point drawing a forest. */
 const MAX_TREES = 90_000;
 /** Canopy colours, darkest at the densest planting. */
@@ -102,6 +127,8 @@ export class View3D {
   private junctions!: THREE.InstancedMesh;
   /** Planting. Cones, because a cone at this scale is unmistakably a tree. */
   private trees!: THREE.InstancedMesh;
+  /** Traffic. Sampled from the load the simulation computed, not sprinkled on. */
+  private cars!: THREE.InstancedMesh;
   private readonly dummy = new THREE.Object3D();
   private readonly colour = new THREE.Color();
   private hover: THREE.Mesh;
@@ -218,6 +245,22 @@ export class View3D {
     this.trees.castShadow = true;
     this.trees.receiveShadow = true;
     this.scene.add(this.trees);
+
+    // Cars. Small boxes: at this camera a car is four pixels, and four pixels of the
+    // right colour moving in the right direction is completely convincing.
+    // A tile is one world unit, so a car has to be a fraction of one or a queue of them
+    // is a solid painted line rather than traffic. Long enough to have a direction, short
+    // enough that two on a tile still read as two.
+    const carBox = new THREE.BoxGeometry(0.2, 0.12, 0.34);
+    carBox.translate(0, 0.06, 0);
+    this.cars = new THREE.InstancedMesh(
+      carBox, new THREE.MeshLambertMaterial(), MAX_CARS,
+    );
+    this.cars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.cars.count = 0;
+    this.cars.frustumCulled = false;
+    this.cars.castShadow = true;
+    this.scene.add(this.cars);
 
     this.hover = new THREE.Mesh(
       new THREE.BoxGeometry(CELL, 0.05, CELL),
@@ -362,9 +405,13 @@ export class View3D {
   /** Rebuild the instance buffers for whatever is on screen. */
   update(snap: Snapshot, aspect: number): void {
     const {
-      zone, density, level, road, roadClass, roadLevel, junction, trees,
+      zone, density, level, road, roadClass, roadLevel, junction, trees, roadLoad,
       civic, civicAnchor, powered,
     } = snap;
+    // Traffic animates against the wall clock rather than the sim tick: the simulation
+    // runs at whatever speed the player chose, and cars that stop dead when the game is
+    // paused look broken rather than paused.
+    const now = performance.now() / 1000;
     const r = this.cam.visibleCells(aspect, this.gridW, this.gridH);
     const w = this.gridW;
 
@@ -376,6 +423,7 @@ export class View3D {
     for (const id of this.cornerMeshes.keys()) cornerCounts.set(id, 0);
     let jn = 0;
     let tr = 0;
+    let cr = 0;
     for (let y = r.y0; y <= r.y1; y++) {
       for (let x = r.x0; x <= r.x1; x++) {
         const i = y * w + x;
@@ -444,6 +492,41 @@ export class View3D {
           if (junction[i]) this.colour.lerp(JUNCTION_TINT, 0.35);
           if (lvlHere > 0) this.colour.lerp(DECK_TINT, 0.16 * lvlHere);
           mesh.setColorAt(slot, this.colour);
+          // Cars, in proportion to what this tile is actually carrying.
+          const carriage = roadLoad[i];
+          if (carriage > 0 && cr < MAX_CARS) {
+            const n = Math.min(MAX_CARS_PER_TILE, Math.ceil(carriage / TRIPS_PER_CAR));
+            // Which way traffic runs here. On a corner or a junction there is no single
+            // answer, so those get the axis they lean towards rather than a wrong one.
+            const alongZ = (north || south) && !(east || west) ? true
+              : (east || west) && !(north || south) ? false
+              : ((i >>> 3) & 1) === 1;
+            for (let k = 0; k < n && cr < MAX_CARS; k++) {
+              const j = ((i * 2246822519) ^ (k * 3266489917)) >>> 0;
+              // Deterministic phase per car, so they do not all move in lockstep.
+              const dir = (j & 1) === 0 ? 1 : -1;
+              // Spaced by k as well as hashed, so two cars on one tile are never on top
+              // of each other however the hash falls.
+              const spacing = k / n;
+              const phase = ((now * CAR_SPEED * dir + spacing + (j % 1000) / 1000) % 1 + 1) % 1;
+              const along = (phase - 0.5) * CELL;
+              // Half a lane off centre, on the correct side for the way they are going.
+              const lane = dir * CELL * 0.16;
+              this.dummy.position.set(
+                x * CELL + (alongZ ? lane : along),
+                base + lift + (lvlHere > 0 ? 0.14 : 0.08),
+                y * CELL + (alongZ ? along : lane),
+              );
+              this.dummy.rotation.y = alongZ ? 0 : Math.PI / 2;
+              this.dummy.scale.set(1, 1, 1);
+              this.dummy.updateMatrix();
+              this.dummy.rotation.y = 0;
+              this.cars.setMatrixAt(cr, this.dummy.matrix);
+              this.cars.setColorAt(cr, CAR_COLOURS[(j >>> 8) % CAR_COLOURS.length]);
+              cr++;
+            }
+          }
+
           if (piece === Piece.Junction) jn = slot + 1;
           else if (piece === Piece.Corner) cornerCounts.set(roadClass[i], slot + 1);
           else counts.set(roadClass[i], slot + 1);
@@ -523,6 +606,9 @@ export class View3D {
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
+    this.cars.count = cr;
+    this.cars.instanceMatrix.needsUpdate = true;
+    if (this.cars.instanceColor) this.cars.instanceColor.needsUpdate = true;
     this.trees.count = tr;
     this.trees.instanceMatrix.needsUpdate = true;
     if (this.trees.instanceColor) this.trees.instanceColor.needsUpdate = true;

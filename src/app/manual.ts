@@ -22,6 +22,7 @@ import { WORLD_WORKS, siblingOf } from '../sim/works.ts';
 import { ROAD_CLASSES, ROAD_LEVELS } from '../sim/roads.ts';
 import { TRIPS_PER_STEP } from '../sim/traffic.ts';
 import { JUNCTIONS } from '../sim/junctions.ts';
+import { CONTROLS, UNCONTROLLED } from '../sim/controls.ts';
 import { WASTE_PER_STEP, RECYCLE_MAX_CUT, FREE_DISPOSAL } from '../sim/waste.ts';
 import { SERIES, HISTORY_LIMIT, type SeriesKey } from '../sim/history-series.ts';
 import { MAX_UNDO } from '../sim/history.ts';
@@ -198,6 +199,24 @@ export function buildManual(): ManualSection[] {
         land beside them access.</p>
         ${table(['Height', 'Cost', 'What it is for'],
           ROAD_LEVELS.map((l) => [l.label, `×${l.costMul}`, l.note]))}
+        <h4>Traffic control</h4>
+        <p>A crossing is where a road's capacity goes to die: two streams of traffic taking
+        turns over one square of tarmac. An <b>uncontrolled crossing keeps only
+        ${Math.round(UNCONTROLLED * 100)}%</b> of its road's capacity, because nobody knows
+        whose turn it is — which is why a grid of unsigned crossroads jams long before its
+        roads are anywhere near full.</p>
+        ${table(['Control', 'Carries', 'Cost', 'Upkeep', 'What it is for'],
+          CONTROLS.map((c) => [
+            c.label, `×${c.throughput}`, money(c.cost), money(c.upkeep) + ' / mo', c.note,
+          ]))}
+        <p>Signals are the only control that beats having no crossing there at all: they
+        send traffic through in phases rather than one vehicle at a time. Signs are nearly
+        free and help a little. A <b>roundabout beats all of them</b> and costs far more
+        once — a junction is not a crossroads with a sign on it, so it replaces the penalty
+        rather than stacking with it.</p>
+        <p class="tip">A control only does anything <b>where roads actually cross</b>. A
+        stop sign in the middle of a straight is street furniture, and the simulation
+        ignores it there rather than letting you pave a road with signs to speed it up.</p>
         <h4>Curves and junctions</h4>
         <p>The <b>Curve</b> draw mode bends a run round its corner instead of turning it
         square. It is the same drag as a line — press and release — with the corner used as

@@ -8,6 +8,7 @@
 
 import { CIVIC_DEFS } from '../sim/tiles.ts';
 import { ROAD_CLASSES } from '../sim/roads.ts';
+import { CONTROLS } from '../sim/controls.ts';
 
 /** Little-endian 0xAABBGGRR, written straight into a Uint32 view of ImageData. */
 export function rgb(r: number, g: number, b: number): number {
@@ -106,6 +107,10 @@ export const ROAD_COLOUR: Record<number, number> =
  */
 export const LEVEL_LIFT: readonly number[] = [0, 0.22, 0.42, 0.6];
 export const ROAD_HIGH = parseHex('#e6ebf5');
+
+/** Traffic controls, by id, so a signed crossing is visible without a layer. */
+export const CONTROL_COLOUR: Record<number, number> =
+  Object.fromEntries(CONTROLS.map((c) => [c.id, parseHex(c.colour)]));
 
 /** Planted ground, at full density. Blended by how densely a tile is planted. */
 export const TREE_COLOUR = parseHex('#3f7a46');

@@ -186,6 +186,18 @@ space-drag to pan.
   so an elevated deck runs over a street instead of merging into it, and two levels of
   clearance lets the ground road carry straight on underneath. Height reads as brightness.
   Nothing fronts onto a raised road.
+- **Traffic control** — give-way, stop signs and signals. An uncontrolled crossing keeps
+  only 62% of its road's capacity, so a grid of unsigned crossroads jams long before its
+  roads are full. Signals are the only control that beats having no crossing at all; a
+  roundabout beats all of them and replaces the penalty rather than stacking with it. A
+  sign on a straight does nothing, deliberately.
+- **Cars** — traffic drawn from the load the simulation actually computed, sampled at one
+  car per 10 trips. Not decoration sprinkled on top: what you see on a road is what that
+  road is carrying.
+- **Disaster intensity** — separately from which disasters happen, you choose what they may
+  destroy: roads, power lines, water pipes and sewers, each on its own switch. Earthquakes
+  have always taken roads; cutting buried services starts off, because one severed line
+  strands everything beyond it.
 - **Curves and junctions** — a Curve draw mode that sweeps a run round its corner instead
   of turning it square, and roundabouts and crossovers placed as stamps. A junction is not
   decoration: it multiplies the capacity of the tiles it occupies, which is the answer when
@@ -213,7 +225,7 @@ space-drag to pan.
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 254 tests
+npm test          # 267 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 

@@ -12,7 +12,7 @@ import type { Camera } from './camera.ts';
 import type { Snapshot } from './protocol.ts';
 import {
   GROUND, GROUND_ALT, ROAD, ROAD_COLOUR, JUNCTION_MARK, LEVEL_LIFT, ROAD_HIGH, TREE_COLOUR,
-  UNPOWERED, ZONE_TINT, GRID_LINE, DEVELOPED_OUTLINE,
+  CONTROL_COLOUR, UNPOWERED, ZONE_TINT, GRID_LINE, DEVELOPED_OUTLINE,
   WATER_DEEP, WATER_SHALLOW, SHORE, mix, buildingColour, CIVIC_COLOUR,
   POWER_LINE, PIPE_LINE, SEWER_LINE, POWER_REACH, PIPE_REACH, SEWER_REACH,
   DEAD_UTILITY, SOURCE_MARK,
@@ -92,7 +92,7 @@ export class CityRenderer {
     const px = this.pixels!;
     const gw = this.gridWidth;
     const {
-      zone, density, road, roadClass, roadLevel, junction, trees,
+      zone, density, road, roadClass, roadLevel, junction, control, trees,
       level, civic, powered, watered, sewered,
       powerLine, pipe, sewer,
     } = snap;
@@ -127,6 +127,9 @@ export class CityRenderer {
           // A junction is worth more than the tiles it is made of, so it should not look
           // identical to them.
           if (junction[i]) c = mix(c, JUNCTION_MARK, 0.55);
+          // A controlled crossing should be visible without turning a layer on — it is
+          // the difference between a junction that works and one that does not.
+          if (control[i]) c = mix(c, CONTROL_COLOUR[control[i]] ?? c, 0.5);
         } else if (civic[i]) {
           c = CIVIC_COLOUR[civic[i]] ?? GROUND;
         } else if (level[i] > 0) {

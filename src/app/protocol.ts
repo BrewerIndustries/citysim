@@ -41,6 +41,15 @@ export interface Snapshot {
   roadClass: Uint8Array;
   roadLevel: Uint8Array;
   junction: Uint8Array;
+  control: Uint8Array;
+  /**
+   * Trips per tick on each road tile, quantised to a byte.
+   *
+   * Sent so the ¾ view can put cars on the roads in proportion to what they are actually
+   * carrying — the traffic you see is the traffic the simulation computed, not decoration
+   * sprinkled on top.
+   */
+  roadLoad: Uint8Array;
   powerLine: Uint8Array;
   pipe: Uint8Array;
   sewer: Uint8Array;
@@ -105,7 +114,7 @@ export type ToWorker =
   | { type: 'layers'; layers: string[] }
   | { type: 'inspect'; index: number }
   | { type: 'tax'; tax: { r: number; c: number; i: number } }
-  | { type: 'options'; disasters: Record<string, boolean> }
+  | { type: 'options'; disasters?: Record<string, boolean>; damage?: Record<string, boolean> }
   | { type: 'save'; slot: string }
   | { type: 'load'; slot: string; bytes: Uint8Array }
   | { type: 'new'; size: number; seed: number; mapSeed: number }
@@ -120,6 +129,7 @@ export type Action =
   | { kind: 'terraform'; cells: number[]; steps: number }
   | { kind: 'trees'; cells: number[]; steps: number }
   | { kind: 'water'; cells: number[]; wet: boolean }
+  | { kind: 'control'; cells: number[]; control: number }
   | { kind: 'remove'; cells: number[]; target: import('../sim/city.ts').RemoveTarget }
   | { kind: 'utility'; cells: number[]; utility: 'powerLine' | 'pipe' | 'sewer' }
   | { kind: 'zone'; cells: number[]; zone: number; density: number }

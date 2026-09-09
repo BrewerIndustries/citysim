@@ -13,12 +13,12 @@
 import { City } from './city.ts';
 import { Tiles } from './tiles.ts';
 import { DEFAULT_ROAD_CLASS } from './roads.ts';
-import { DISASTERS } from './disasters.ts';
+import { DISASTERS, DAMAGE_KINDS } from './disasters.ts';
 import { ACHIEVEMENTS } from './achievements.ts';
 
 const MAGIC = 0x4354534d; // "CTSM"
 const END_MAGIC = 0x454e4421; // "END!"
-export const SAVE_VERSION = 13;
+export const SAVE_VERSION = 14;
 
 /** Planes written to disk, in order. Derived planes are deliberately absent. */
 const PLANES: Array<keyof Tiles & string> = [
@@ -36,6 +36,8 @@ const PLANES_V10: Array<keyof Tiles & string> = ['junction'];
 const PLANES_V11: Array<keyof Tiles & string> = ['roadLevel'];
 /** Added in v13, with landscaping. Absent means a city nobody planted. */
 const PLANES_V13: Array<keyof Tiles & string> = ['trees'];
+/** Added in v14, with traffic control. */
+const PLANES_V14: Array<keyof Tiles & string> = ['control'];
 
 /** Ticks of field simulation run after loading, to regenerate the derived state. */
 export const SETTLE_TICKS = 14;
@@ -182,6 +184,12 @@ export function serialize(city: City): Uint8Array {
   // Terraforming, v12. Sparse: a city that regrades a few hundred tiles should not pay
   // for a full 65KB height map in every save, and most cities change none at all.
   for (const name of PLANES_V13) writePlane(w, city.tiles[name] as Uint8Array);
+  // v14: the control plane, and the difficulty settings. A city's chosen intensity is
+  // part of that city — reloading it into somebody else's defaults would change the game
+  // under the player without telling them.
+  for (const name of PLANES_V14) writePlane(w, city.tiles[name] as Uint8Array);
+  w.u8(DAMAGE_KINDS.length);
+  for (const d of DAMAGE_KINDS) w.u8(city.damage[d.key] ? 1 : 0);
   const edits = [...city.terrain.edits];
   w.u32(edits.length);
   for (const [i, h] of edits) { w.u32(i); w.u8(h); }
@@ -281,6 +289,15 @@ export function deserialize(bytes: Uint8Array): LoadResult {
         for (const name of PLANES_V11) readPlane(r, city.tiles[name] as Uint8Array);
         if (version >= 13) {
           for (const name of PLANES_V13) readPlane(r, city.tiles[name] as Uint8Array);
+          if (version >= 14) {
+            for (const name of PLANES_V14) readPlane(r, city.tiles[name] as Uint8Array);
+            const n = r.u8();
+            for (let k = 0; k < n; k++) {
+              const def = DAMAGE_KINDS[k];
+              const on = r.u8() === 1;
+              if (def) city.damage[def.key] = on;
+            }
+          }
         }
         if (version >= 12) {
           const n = r.u32();

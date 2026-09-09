@@ -12,14 +12,16 @@ import {
   MAX_ROAD_LEVEL, roadCost, roadUpkeep as roadUpkeepOf,
 } from './roads.ts';
 import {
-  stepTraffic, recomputeNearestRoad, listRoads, EMPTY_TRAFFIC, type TrafficReport,
+  stepTraffic, recomputeNearestRoad, listRoads, markCrossings, EMPTY_TRAFFIC,
+  type TrafficReport,
 } from './traffic.ts';
 import { JUNCTION_BY_ID } from './junctions.ts';
+import { CONTROL_BY_ID } from './controls.ts';
 import { UtilityGrid, POWER, WATER, SEWAGE, type UtilityReport } from './utility.ts';
 import { stepGrowth, tallyCity, requiredDesirability, type GrowthStats } from './growth.ts';
 import { computeDemand, NEUTRAL_TAX, type Demand } from './demand.ts';
 import { updateFireRisk, stepFires } from './fire.ts';
-import { stepDisasters, DISASTERS } from './disasters.ts';
+import { stepDisasters, DISASTERS, DEFAULT_DAMAGE } from './disasters.ts';
 import { ACHIEVEMENTS, snapshotFor } from './achievements.ts';
 import { History } from './history.ts';
 import { Terrain, WATER_TABLE_MIN, SEA_LEVEL } from './terrain.ts';
@@ -134,6 +136,8 @@ export class City {
   /** Compacted road indices, rebuilt with the distance field rather than every tick. */
   private roadList!: Int32Array;
   private roadListCount = 0;
+  /** 1 where roads cross, rebuilt with the road list rather than every tick. */
+  private crossings!: Uint8Array;
 
   /**
    * What the world works currently STANDING do for the city.
@@ -178,6 +182,8 @@ export class City {
   tilesLostToDisaster = 0;
   /** Test hook: multiplies disaster frequency. 1 is the real game. */
   disasterRateScale = 1;
+  /** Which kinds of infrastructure disasters may take. Player-configurable. */
+  damage: Record<string, boolean> = { ...DEFAULT_DAMAGE };
   /** Progression is measured against the high-water mark, never the current figure. */
   peakPopulation = 0;
   everBuilt = new Set<number>();
@@ -214,6 +220,8 @@ export class City {
    * live city and a reloaded save stops matching the one it was saved from.
    */
   private roadUpkeep = 0;
+  /** Signals cost money every month; signs cost almost none. Counted incrementally. */
+  private controlUpkeep = 0;
   private readonly utilityCells: Record<UtilityKind, number> = { powerLine: 0, pipe: 0, sewer: 0 };
   private civicUpkeep = 0;
   private tickCount = 0;
@@ -233,6 +241,7 @@ export class City {
     this.trafficNext = new Float32Array(this.grid.size);
     this.nearestRoad = new Int32Array(this.grid.size);
     this.roadList = new Int32Array(this.grid.size);
+    this.crossings = new Uint8Array(this.grid.size);
     this.powerGrid = new UtilityGrid(this.grid.size, POWER, this.grid.width);
     this.waterGrid = new UtilityGrid(this.grid.size, WATER, this.grid.width);
     this.sewageGrid = new UtilityGrid(this.grid.size, SEWAGE, this.grid.width);
@@ -323,6 +332,7 @@ export class City {
       // rides along with the distance field rather than being redone every tick.
       recomputeNearestRoad(this.grid, this.tiles, this.nearestRoad, this.queue);
       this.roadListCount = listRoads(this.grid, this.tiles, this.roadList);
+      markCrossings(this.grid, this.tiles, this.roadList, this.roadListCount, this.crossings);
       this.roadsDirty = false;
     }
     if (this.civicsDirty) {
@@ -346,7 +356,7 @@ export class City {
         this.traffic = stepTraffic(
           this.grid, this.tiles, this.trafficLoad, this.trafficNext,
           this.fields.get('congestSrc'), this.nearestRoad,
-          this.roadList, this.roadListCount,
+          this.roadList, this.roadListCount, this.crossings,
         );
         this.sim.markSourceAll('congestSrc');
       });
@@ -370,15 +380,33 @@ export class City {
         );
       }
     }
-    for (const e of stepDisasters({
+    const ctx = {
       grid: this.grid, tiles: this.tiles, fields: this.fields, terrain: this.terrain,
       rng: this.rngFire, changes: this.changes,
       developedCells: this.stats.developedCells, enabled: this.disasters,
       rateScale: this.disasterRateScale,
-    })) {
+      roadsLost: 0, linesLost: 0, damage: this.damage,
+    };
+    for (const e of stepDisasters(ctx)) {
       this.disasterCounts[e.key]++;
       this.tilesLostToDisaster += e.destroyed;
       this.pushMessage(e.message);
+    }
+    // Infrastructure taken by a disaster has to be ACCOUNTED for, not just erased. The
+    // first version cleared the road plane and nothing else, so the city went on paying
+    // upkeep for roads that were gone and every building behind the gap kept its access,
+    // because nothing told the network to rebuild.
+    if (ctx.roadsLost > 0) {
+      this.markRoadsDirty();
+      this.recountUpkeep();
+    }
+    if (ctx.linesLost > 0) {
+      this.markUtilitiesDirty();
+      this.recountUpkeep();
+      this.pushMessage(
+        `${ctx.linesLost} utility line${ctx.linesLost === 1 ? '' : 's'} cut — check the network layers.`,
+        CONDITION_TTL,
+      );
     }
 
     this.demand = computeDemand(
@@ -408,7 +436,7 @@ export class City {
     // Counted incrementally as things are built and demolished. Two full-grid scans a
     // month cost 35ms a tick at Tier 3 for numbers that change by one at a time.
     l.upkeepCivic = this.civicUpkeep;
-    l.upkeepRoads = this.roadUpkeep
+    l.upkeepRoads = this.roadUpkeep + this.controlUpkeep
       + (this.utilityCells.powerLine + this.utilityCells.pipe + this.utilityCells.sewer) * LINE_UPKEEP;
     l.net = l.taxR + l.taxC + l.taxI - l.upkeepCivic - l.upkeepRoads;
 
@@ -798,8 +826,21 @@ export class City {
   /** Land value every tile starts from, including whatever the world works add. */
   get landValueBase(): number { return LAND_VALUE_BASE + this.worksEffects.landValue; }
 
-  /** Road upkeep as the ledger will charge it. Exposed so tests can pin the counter. */
-  get ledgerRoadUpkeep(): number { return this.roadUpkeep; }
+  /**
+   * What each road tile is carrying, in trips per tick.
+   *
+   * Exposed so the view can draw traffic on it. The renderer only ever reads it.
+   */
+  get roadLoad(): Float32Array { return this.trafficLoad; }
+
+  /**
+   * Road upkeep as the ledger will charge it, signals included.
+   *
+   * "As the ledger will charge it" is the contract, so it has to be the same sum the
+   * ledger uses — a getter that quietly left out traffic signals would report a number
+   * nobody is billed for.
+   */
+  get ledgerRoadUpkeep(): number { return this.roadUpkeep + this.controlUpkeep; }
 
   canAfford(cost: number): boolean { return this.funds >= cost; }
 
@@ -1005,6 +1046,32 @@ export class City {
   }
 
   /**
+   * Put a traffic control on a tile, or take one off.
+   *
+   * Allowed on any road; only does anything where roads cross. The rule is checked by the
+   * simulation rather than the tool, so a sign left behind by a road that was later
+   * straightened simply stops mattering instead of becoming a lie.
+   */
+  setControl(i: number, controlId: number): { ok: boolean; error?: string } {
+    const t = this.tiles;
+    if (!t.road[i]) return { ok: false, error: 'there is no road here' };
+    if (t.junction[i]) return { ok: false, error: 'a junction controls itself' };
+    if (t.control[i] === controlId) return { ok: false, error: 'that is already here' };
+    const def = controlId ? CONTROL_BY_ID.get(controlId) : null;
+    if (controlId && !def) return { ok: false, error: 'unknown control' };
+    const price = def?.cost ?? 0;
+    if (!this.canAfford(price)) return { ok: false, error: `costs $${price}` };
+    this.history.touch(t, i);
+    this.spend(price);
+    this.controlUpkeep -= CONTROL_BY_ID.get(t.control[i])?.upkeep ?? 0;
+    this.controlUpkeep += def?.upkeep ?? 0;
+    t.control[i] = controlId;
+    this.recordChange(i);
+    this.markRoadsDirty();
+    return { ok: true };
+  }
+
+  /**
    * Plant or clear trees.
    *
    * Water and roofs cannot hold trees; everything else can, including zoned land that
@@ -1198,6 +1265,8 @@ export class City {
     t.roadClass[i] = 0;
     t.junction[i] = 0;
     t.roadLevel[i] = 0;
+    this.controlUpkeep -= CONTROL_BY_ID.get(t.control[i])?.upkeep ?? 0;
+    t.control[i] = 0;
     this.roadCells--;
     this.markRoadsDirty();
     return true;
@@ -1298,6 +1367,8 @@ export class City {
       t.roadClass[i] = 0;
       t.junction[i] = 0;
       t.roadLevel[i] = 0;
+      this.controlUpkeep -= CONTROL_BY_ID.get(t.control[i])?.upkeep ?? 0;
+      t.control[i] = 0;
       this.roadCells--;
       this.markRoadsDirty();
     }

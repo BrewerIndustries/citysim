@@ -92,9 +92,11 @@ export function stepTraffic(
   /** Indices of the road tiles, and how many are live. See `listRoads`. */
   roads: Int32Array,
   roadCount: number,
+  /** 1 where roads cross. See `markCrossings`. */
+  crossings: Uint8Array,
 ): TrafficReport {
   const { width, height, size } = grid;
-  const { zone, level, density, road, roadClass, junction, roadLevel } = tiles;
+  const { zone, level, density, road, roadClass, junction, roadLevel, control } = tiles;
   // Cleared and walked through the compacted list, not the grid: roads are a thin
   // skeleton over a mostly empty map, and scanning every cell three times a tick to find
   // them cost more than the whole rest of the pass.
@@ -147,10 +149,12 @@ export function stepTraffic(
       const n1 = step(1, x < width - 1);
       const n2 = step(-width, y > 0);
       const n3 = step(width, y < height - 1);
-      const c0 = n0 >= 0 ? capacityOf(roadClass[n0], junction[n0]) : 0;
-      const c1 = n1 >= 0 ? capacityOf(roadClass[n1], junction[n1]) : 0;
-      const c2 = n2 >= 0 ? capacityOf(roadClass[n2], junction[n2]) : 0;
-      const c3 = n3 >= 0 ? capacityOf(roadClass[n3], junction[n3]) : 0;
+      const cap = (n: number) =>
+        capacityOf(roadClass[n], junction[n], control[n], crossings[n] === 1);
+      const c0 = n0 >= 0 ? cap(n0) : 0;
+      const c1 = n1 >= 0 ? cap(n1) : 0;
+      const c2 = n2 >= 0 ? cap(n2) : 0;
+      const c3 = n3 >= 0 ? cap(n3) : 0;
       const total = c0 + c1 + c2 + c3;
       if (total === 0) continue;
       const moving = load[i] * RELAX_SHARE;
@@ -169,7 +173,7 @@ export function stepTraffic(
   let worst = 0;
   for (let k = 0; k < roadCount; k++) {
     const i = roads[k];
-    const cap = capacityOf(roadClass[i], junction[i]);
+    const cap = capacityOf(roadClass[i], junction[i], control[i], crossings[i] === 1);
     if (cap === 0) continue;
     const ratio = load[i] / cap;
     if (ratio > worst) worst = ratio;
@@ -191,6 +195,36 @@ export function listRoads(grid: Grid, tiles: Tiles, out: Int32Array): number {
   let n = 0;
   for (let i = 0; i < grid.size; i++) if (road[i]) out[n++] = i;
   return n;
+}
+
+/**
+ * Mark the road tiles where roads actually cross — three or more ways in.
+ *
+ * Computed with the road list, only when the network changes, because it is asked for
+ * four times per road tile per relaxation pass and counting neighbours in that loop would
+ * cost more than the whole rest of the pass. Two ways in is a road going past, however
+ * sharply it bends; three is a decision about who goes first.
+ */
+export function markCrossings(
+  grid: Grid, tiles: Tiles, roads: Int32Array, count: number, out: Uint8Array,
+): void {
+  const { width, height } = grid;
+  const { road, roadLevel } = tiles;
+  out.fill(0);
+  for (let k = 0; k < count; k++) {
+    const i = roads[k];
+    const x = i & (width - 1);
+    const y = i >>> grid.shift;
+    const lvl = roadLevel[i];
+    let links = 0;
+    // Same level test the traffic and rendering use: a deck passing overhead is not an
+    // arm of this junction, it is a different road.
+    if (x > 0 && road[i - 1] && Math.abs(roadLevel[i - 1] - lvl) <= 1) links++;
+    if (x < width - 1 && road[i + 1] && Math.abs(roadLevel[i + 1] - lvl) <= 1) links++;
+    if (y > 0 && road[i - width] && Math.abs(roadLevel[i - width] - lvl) <= 1) links++;
+    if (y < height - 1 && road[i + width] && Math.abs(roadLevel[i + width] - lvl) <= 1) links++;
+    if (links >= 3) out[i] = 1;
+  }
 }
 
 /**

@@ -38,7 +38,10 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       if (city) city.tax = msg.tax;
       break;
     case 'options':
-      if (city) city.disasters = { ...city.disasters, ...msg.disasters };
+      if (city) {
+        if (msg.disasters) city.disasters = { ...city.disasters, ...msg.disasters };
+        if (msg.damage) city.damage = { ...city.damage, ...msg.damage };
+      }
       break;
     case 'inspect':
       if (city) self.postMessage({ type: 'inspect', cell: city.inspect(msg.index) });
@@ -130,6 +133,25 @@ function postTerrain(c: City): void {
   );
 }
 
+/**
+ * Road load as one byte per tile.
+ *
+ * A float per cell would be four megabytes a frame at Tier 2 for a number the renderer
+ * only uses to decide how many cars to draw. `LOAD_PER_BYTE` sets the ceiling: past it
+ * the road is drawn as full, which is fine — nobody counts the cars on a jam.
+ */
+const LOAD_PER_BYTE = 4;
+function packLoad(c: City): Uint8Array {
+  const load = c.roadLoad;
+  const out = new Uint8Array(load.length);
+  for (let i = 0; i < load.length; i++) {
+    if (load[i] <= 0) continue;
+    const v = load[i] / LOAD_PER_BYTE;
+    out[i] = v >= 255 ? 255 : v;
+  }
+  return out;
+}
+
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December'];
 function monthName(m: number): string { return MONTHS[m] ?? ''; }
@@ -144,6 +166,15 @@ function apply(c: City, a: import('./protocol.ts').Action): void {
         if (!r.ok && r.error) error ??= r.error;
       }
       if (error) c.pushMessage(`Can't plant that — ${error}.`);
+      break;
+    }
+    case 'control': {
+      let error: string | null = null;
+      for (const i of a.cells) {
+        const r = c.setControl(i, a.control);
+        if (!r.ok && r.error) error ??= r.error;
+      }
+      if (error) c.pushMessage(`Can't put that there — ${error}.`);
       break;
     }
     case 'water': {
@@ -240,6 +271,8 @@ function loop(): void {
     roadClass: new Uint8Array(t.roadClass),
     roadLevel: new Uint8Array(t.roadLevel),
     junction: new Uint8Array(t.junction),
+    control: new Uint8Array(t.control),
+    roadLoad: packLoad(c),
     powerLine: new Uint8Array(t.powerLine),
     pipe: new Uint8Array(t.pipe),
     sewer: new Uint8Array(t.sewer),
@@ -254,7 +287,7 @@ function loop(): void {
   };
   lastSeriesMonth = c.month;
   const transfer: Transferable[] = [
-    snap.zone.buffer, snap.density.buffer, snap.road.buffer, snap.roadClass.buffer, snap.roadLevel.buffer, snap.junction.buffer,
+    snap.zone.buffer, snap.density.buffer, snap.road.buffer, snap.roadClass.buffer, snap.roadLevel.buffer, snap.junction.buffer, snap.control.buffer, snap.roadLoad.buffer,
     snap.level.buffer, snap.civic.buffer, snap.civicAnchor.buffer, snap.trees.buffer, snap.powered.buffer,
     snap.powerLine.buffer, snap.pipe.buffer, snap.watered.buffer,
     snap.sewer.buffer, snap.sewered.buffer,

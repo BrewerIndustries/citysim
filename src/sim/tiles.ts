@@ -327,6 +327,13 @@ export class Tiles {
    * gets built on top of them, because a sapling is not an obstacle.
    */
   readonly trees: Uint8Array;
+  /**
+   * Traffic control standing on this tile. See CONTROLS in controls.ts.
+   *
+   * Only does anything where roads actually cross — a stop sign on a straight is street
+   * furniture, not a traffic measure.
+   */
+  readonly control: Uint8Array;
   /** 1 if a power line runs here. Lines may share a tile with a road. */
   readonly powerLine: Uint8Array;
   /** 1 if a water pipe runs here. Pipes may share a tile with a road or a line. */
@@ -360,7 +367,7 @@ export class Tiles {
 
   constructor(grid: Grid) {
     const n = grid.size;
-    const planes = 18;
+    const planes = 19;
     this.buffer = new ArrayBuffer(n * planes);
     let o = 0;
     const plane = () => {
@@ -375,6 +382,7 @@ export class Tiles {
     this.junction = plane();
     this.roadLevel = plane();
     this.trees = plane();
+    this.control = plane();
     this.powerLine = plane();
     this.pipe = plane();
     this.sewer = plane();

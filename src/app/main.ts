@@ -18,7 +18,7 @@ import { writeSlot, readSlot, describeSlot, clearSlot } from './storage.ts';
 import { Chart } from './chart.ts';
 import { AUTOSAVE_MONTHS } from './autosave.ts';
 import { FLAT_MAP } from '../sim/terrain.ts';
-import { DISASTERS } from '../sim/disasters.ts';
+import { DISASTERS, DAMAGE_KINDS, DEFAULT_DAMAGE } from '../sim/disasters.ts';
 import { ACHIEVEMENTS } from '../sim/achievements.ts';
 import { SERIES, type SeriesData, type SeriesKey } from '../sim/history-series.ts';
 import type { FromWorker, Snapshot, ToWorker, Action } from './protocol.ts';
@@ -323,7 +323,7 @@ function selectTool(t: Tool): void {
     : junctionDef ? junctionDef.size
     : 1;
   if (t.kind === 'powerline' || t.kind === 'pipe' || t.kind === 'sewer') brush = 1;
-  if (t.kind === 'remove') brush = 1;
+  if (t.kind === 'remove' || t.kind === 'control') brush = 1;
   for (const row of document.querySelectorAll<HTMLElement>('.densities.levels')) {
     row.style.display = row.dataset.levelsFor === t.id ? 'flex' : 'none';
     for (const b of row.querySelectorAll<HTMLElement>('button')) {
@@ -566,6 +566,7 @@ function refreshSaveNote(): void {
 }
 
 function buildOptions(): void {
+  buildDamageOptions();
   const box = $('disaster-opts');
   box.innerHTML = '';
   for (const d of DISASTERS) {
@@ -582,6 +583,36 @@ function buildOptions(): void {
         disasters[x.dataset.disaster!] = x.checked;
       });
       post({ type: 'options', disasters });
+    };
+  });
+}
+
+/**
+ * What a disaster is allowed to destroy, each switchable on its own.
+ *
+ * A separate question from whether the disaster happens at all: one is "does the weather
+ * happen", the other is "how much does it cost me when it does". Both start where the
+ * game has always been — earthquakes take roads, buried services survive — so these dial
+ * the game UP rather than walking anything back.
+ */
+function buildDamageOptions(): void {
+  const box = $('damage-opts');
+  box.innerHTML = '';
+  for (const d of DAMAGE_KINDS) {
+    const label = document.createElement('label');
+    label.className = 'toggle';
+    label.title = d.hint;
+    const on = DEFAULT_DAMAGE[d.key] ? ' checked' : '';
+    label.innerHTML = `<input type="checkbox" data-damage="${d.key}"${on}><span>${d.label}</span>`;
+    box.appendChild(label);
+  }
+  box.querySelectorAll<HTMLInputElement>('input').forEach((input) => {
+    input.onchange = () => {
+      const damage: Record<string, boolean> = {};
+      box.querySelectorAll<HTMLInputElement>('input').forEach((x) => {
+        damage[x.dataset.damage!] = x.checked;
+      });
+      post({ type: 'options', damage });
     };
   });
 }
@@ -817,6 +848,7 @@ function commitPreview(): void {
     case 'terraform': act({ kind: 'terraform', cells, steps: tool.terraform ?? 1 }); break;
     case 'trees': act({ kind: 'trees', cells, steps: tool.trees ?? 1 }); break;
     case 'water': act({ kind: 'water', cells, wet: tool.wet ?? true }); break;
+    case 'control': act({ kind: 'control', cells, control: tool.controlId ?? 0 }); break;
     case 'zone': act({ kind: 'zone', cells, zone: tool.zone!, density }); break;
     case 'powerline': act({ kind: 'utility', cells, utility: 'powerLine' }); break;
     case 'pipe': act({ kind: 'utility', cells, utility: 'pipe' }); break;
@@ -873,6 +905,9 @@ function applyAt(cell: { x: number; y: number }): void {
         kind: 'water', wet: tool.wet ?? true,
         cells: brushCells(cell.x, cell.y, brush, MAP_SIZE, MAP_SIZE),
       });
+      break;
+    case 'control':
+      act({ kind: 'control', cells: [cell.y * MAP_SIZE + cell.x], control: tool.controlId ?? 0 });
       break;
     case 'junction': {
       // Stamped like a building: centred under the cursor, anchored top-left, one click.

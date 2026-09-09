@@ -5,10 +5,11 @@ import {
 } from '../sim/city.ts';
 import { ROAD_CLASSES } from '../sim/roads.ts';
 import { JUNCTIONS, JUNCTION_BY_ID } from '../sim/junctions.ts';
+import { CONTROLS } from '../sim/controls.ts';
 
 export type ToolKind =
   | 'inspect' | 'road' | 'junction' | 'remove' | 'zone' | 'civic' | 'bulldoze'
-  | 'powerline' | 'pipe' | 'sewer' | 'terraform' | 'trees' | 'water';
+  | 'powerline' | 'pipe' | 'sewer' | 'terraform' | 'trees' | 'water' | 'control';
 
 /**
  * What the Remove tool takes off a tile. `all` is the default because "remove" with a
@@ -37,6 +38,8 @@ export interface Tool {
   trees?: number;
   /** Whether this brush makes water or dry land. Water tools only. */
   wet?: boolean;
+  /** Which traffic control this places. 0 removes whatever is there. Control tools only. */
+  controlId?: number;
   /** Short note shown on hover, for tools that need one. */
   note?: string;
   label: string;
@@ -164,6 +167,21 @@ export const TOOLS: Tool[] = assignKeys([
     note: c.note,
   })),
 
+  ...CONTROLS.map((c) => ({
+    id: `control-${c.key}`,
+    kind: 'control' as const,
+    label: c.label,
+    key: '',
+    cost: c.cost,
+    controlId: c.id,
+    colour: c.colour,
+    group: 'Roads',
+    note: c.note,
+  })),
+  { id: 'control-none', kind: 'control' as const, label: 'Remove control', key: '', cost: 0,
+    controlId: 0, colour: '#6a6e78', group: 'Roads',
+    note: 'Takes the sign or signals away and leaves the crossing to sort itself out' },
+
   ...JUNCTIONS.map((j) => ({
     id: `junction-${j.key}`,
     kind: 'junction' as const,
@@ -226,6 +244,9 @@ export function modesFor(kind: ToolKind): { modes: DrawMode[]; preferred: DrawMo
   switch (kind) {
     case 'road':
       return { modes: ['line', 'curve', 'pencil', 'rectangle'], preferred: 'line' };
+    case 'control':
+      // Signs go on individual crossings, so a brush; a line of them would be nonsense.
+      return { modes: ['pencil'], preferred: 'pencil' };
     case 'terraform':
     case 'trees':
     case 'water':
