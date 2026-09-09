@@ -194,6 +194,10 @@ space-drag to pan.
 - **Cars** — traffic drawn from the load the simulation actually computed, sampled at one
   car per 10 trips. Not decoration sprinkled on top: what you see on a road is what that
   road is carrying.
+- **Buildings that look like what they are** — housing keeps its brick and small windows,
+  offices are glass bands lit late, industry is clad sheet with high strip windows and
+  roller doors. One facade for everything made a city read as a single material at three
+  heights.
 - **Disaster intensity** — separately from which disasters happen, you choose what they may
   destroy: roads, power lines, water pipes and sewers, each on its own switch. Earthquakes
   have always taken roads; cutting buried services starts off, because one severed line
@@ -225,7 +229,7 @@ space-drag to pan.
   content, wired into CI as a **gate** rather than a report.
 
 ```bash
-npm test          # 267 tests
+npm test          # 268 tests
 npm run bench     # Tier 1 + Tier 2 simulation benchmark
 ```
 

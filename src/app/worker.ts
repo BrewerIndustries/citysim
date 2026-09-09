@@ -134,20 +134,26 @@ function postTerrain(c: City): void {
 }
 
 /**
- * Road load as one byte per tile.
+ * Road load as one byte per tile: one trip, one unit, saturating at 255.
  *
  * A float per cell would be four megabytes a frame at Tier 2 for a number the renderer
- * only uses to decide how many cars to draw. `LOAD_PER_BYTE` sets the ceiling: past it
- * the road is drawn as full, which is fine — nobody counts the cars on a jam.
+ * only uses to decide how many cars to draw. The first version divided by four first,
+ * which was quietly fatal: an ordinary street carries a handful of trips, and a handful
+ * divided by four TRUNCATES TO ZERO on the way into a byte. Every road in a normal city
+ * reported no traffic at all, so no cars were ever drawn — and it only looked right when
+ * tested with an artificially huge load.
+ *
+ * A tile carrying more than 255 trips is drawn as full, which is fine: nobody counts the
+ * cars in a jam.
  */
-const LOAD_PER_BYTE = 4;
 function packLoad(c: City): Uint8Array {
   const load = c.roadLoad;
   const out = new Uint8Array(load.length);
   for (let i = 0; i < load.length; i++) {
-    if (load[i] <= 0) continue;
-    const v = load[i] / LOAD_PER_BYTE;
-    out[i] = v >= 255 ? 255 : v;
+    const v = load[i];
+    if (v <= 0) continue;
+    // Rounded up, so a tile with any traffic at all reports some.
+    out[i] = v >= 255 ? 255 : Math.max(1, Math.round(v));
   }
   return out;
 }

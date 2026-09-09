@@ -205,43 +205,81 @@ export function junctionTexture(): THREE.CanvasTexture {
 }
 
 /**
- * A facade: rows of windows.
+ * Facades, by what the building is for.
  *
- * One texture serves every building, tinted per instance by its zone. The row pitch is
- * what sells the scale — a block with six rows of windows reads as six storeys tall
- * whatever colour it is, which is most of what makes massing legible as architecture.
+ * One texture for everything made a city read as a single material at three heights.
+ * These are the differences you actually notice from a ¾ camera: how big the windows are,
+ * how many floors they imply, and how much solid wall sits between them.
+ *
+ *  - Housing has small windows, lots of wall, and few floors per storey of massing.
+ *  - Commerce is glass: wide bands, thin spandrels, and the lit windows that make an
+ *    office block read as an office block at dusk.
+ *  - Industry is mostly wall — a few high strip windows, roller doors at the base, and
+ *    the vertical ribs of clad sheet metal.
+ *
+ * Each is white-based so the zone's own colour still comes through instanceColor.
  */
-export function facadeTexture(): THREE.CanvasTexture {
+export type FacadeKind = 'residential' | 'commercial' | 'industrial' | 'civic';
+
+function facadeFor(kind: FacadeKind): THREE.CanvasTexture {
   const size = 64;
   const { c, g } = canvas(size, size);
   g.fillStyle = '#ffffff';
   g.fillRect(0, 0, size, size);
 
-  // Few and large rather than many and small. A box is stretched to its building's
-  // height, so whatever is drawn here is stretched with it — a dense grid becomes a
-  // smeared mesh on anything tall, while a coarse one still reads as windows.
-  const rows = 5;
-  const cols = 4;
+  if (kind === 'industrial') {
+    // Clad sheet: vertical ribs, a strip of high windows, and roller doors at the base.
+    g.fillStyle = 'rgba(0,0,0,0.07)';
+    for (let x = 0; x < size; x += 5) g.fillRect(x, 0, 2, size);
+    g.fillStyle = 'rgba(150,178,196,0.7)';
+    g.fillRect(0, size * 0.16, size, size * 0.1);
+    g.fillStyle = 'rgba(0,0,0,0.13)';
+    for (let x = 4; x < size; x += 12) g.fillRect(x, size * 0.16, 2, size * 0.1);
+    g.fillStyle = 'rgba(40,44,52,0.5)';
+    for (let x = 6; x < size; x += 22) g.fillRect(x, size * 0.62, size * 0.2, size * 0.38);
+    grain(g, size, size, 8123, 14);
+    return finish(c);
+  }
+
+  const rows = kind === 'commercial' ? 7 : 4;
+  const cols = kind === 'commercial' ? 5 : 3;
   const pitchY = size / rows;
   const pitchX = size / cols;
+  // Commerce is glass — the window nearly fills its bay. Housing keeps its brick.
+  const wFrac = kind === 'commercial' ? 0.82 : 0.5;
+  const hFrac = kind === 'commercial' ? 0.6 : 0.42;
+
   for (let r = 0; r < rows; r++) {
     for (let col = 0; col < cols; col++) {
-      // Lit at random but deterministically, so a facade has some life without every
-      // window being identical.
-      const lit = hash(col, r, 7717);
-      const shade = lit > 0.72 ? 'rgba(255,238,190,0.85)'
-        : lit > 0.42 ? 'rgba(40,46,58,0.72)'
-        : 'rgba(28,32,40,0.82)';
+      const lit = hash(col, r, kind === 'commercial' ? 4409 : 7717);
+      // Offices burn late; houses mostly do not.
+      const litLimit = kind === 'commercial' ? 0.55 : 0.82;
+      const shade = lit > litLimit ? 'rgba(255,238,190,0.85)'
+        : lit > 0.4 ? 'rgba(42,52,66,0.72)'
+        : 'rgba(26,32,42,0.84)';
       g.fillStyle = shade;
-      g.fillRect(col * pitchX + pitchX * 0.2, r * pitchY + pitchY * 0.18,
-        pitchX * 0.6, pitchY * 0.5);
+      g.fillRect(
+        col * pitchX + pitchX * ((1 - wFrac) / 2),
+        r * pitchY + pitchY * 0.18,
+        pitchX * wFrac, pitchY * hFrac,
+      );
     }
   }
-  // A darker band at each floor line reads as the slab between storeys.
-  g.fillStyle = 'rgba(0,0,0,0.13)';
-  for (let r = 0; r < rows; r++) g.fillRect(0, r * pitchY + pitchY * 0.8, size, pitchY * 0.16);
-  grain(g, size, size, 3313, 12);
+  // The slab between storeys. Heavier on housing, where the wall does the work.
+  g.fillStyle = kind === 'commercial' ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.15)';
+  for (let r = 0; r < rows; r++) g.fillRect(0, r * pitchY + pitchY * 0.78, size, pitchY * 0.18);
+  grain(g, size, size, kind === 'commercial' ? 3313 : 5711, 12);
   return finish(c);
+}
+
+/** One facade per kind, built once and shared. */
+export function facadeTextures(): Record<FacadeKind, THREE.CanvasTexture> {
+  return {
+    residential: facadeFor('residential'),
+    commercial: facadeFor('commercial'),
+    industrial: facadeFor('industrial'),
+    civic: facadeFor('residential'),
+  };
 }
 
 /**

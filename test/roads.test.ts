@@ -506,3 +506,34 @@ test('road height survives a save round trip', () => {
   const restored = deserialize(serialize(c)).city;
   assert.equal(restored.tiles.roadLevel[i], 2, 'a reloaded city should keep its flyovers');
 });
+
+test('a loaded city knows which road each building pulls out onto', () => {
+  // The settle path used to rebuild only the distance field, leaving nearestRoad as a
+  // zero-filled array — and 0 is a valid cell index, not a "nobody", so every trip in the
+  // city was assigned to the corner of the map. No road showed any traffic, and the one
+  // tile that did was not a road, so nothing ever cleared it and it climbed until it
+  // saturated. Both paths now rebuild the whole network.
+  const c = city();
+  const g = c.grid;
+  for (let x = 20; x < 60; x++) c.buildRoad(g.index(x, 40), street.id);
+  for (let y = 37; y < 40; y++) {
+    for (let x = 22; x < 58; x++) {
+      const i = g.index(x, y);
+      c.paintZone(i, ZONE_COM, 2);
+      c.tiles.level[i] = 3;
+    }
+  }
+  const restored = deserialize(serialize(c)).city;
+  restored.step();
+
+  assert.ok(restored.traffic.trips > 0, 'a reloaded city should still generate trips');
+  let loadedTiles = 0;
+  let offRoad = 0;
+  for (let i = 0; i < restored.roadLoad.length; i++) {
+    if (restored.roadLoad[i] <= 0) continue;
+    loadedTiles++;
+    if (!restored.tiles.road[i]) offRoad++;
+  }
+  assert.equal(offRoad, 0, 'no traffic may be assigned to a tile that is not a road');
+  assert.ok(loadedTiles > 5, `traffic should spread over the network, got ${loadedTiles} tiles`);
+});

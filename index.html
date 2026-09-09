@@ -36,6 +36,14 @@
         <canvas id="view"></canvas>
         <canvas id="view3d" hidden></canvas>
         <button id="view-toggle" title="Switch view (Tab)">Plan</button>
+        <div id="navpad" hidden aria-label="Camera controls">
+          <button data-nav="rot-l" title="Turn left (Shift + ←)">&#8630;</button>
+          <button data-nav="rot-r" title="Turn right (Shift + →)">&#8631;</button>
+          <button data-nav="tilt-up" title="Raise the eye (Shift + ↑)">&#9650;</button>
+          <button data-nav="tilt-down" title="Lower the eye (Shift + ↓)">&#9660;</button>
+          <button data-nav="zoom-in" title="Zoom in (= or scroll)">+</button>
+          <button data-nav="zoom-out" title="Zoom out (&minus; or scroll)">&minus;</button>
+        </div>
         <div id="ticker"></div>
         <div id="hint">Drag to build · Right-drag or Space+drag to pan · Scroll to zoom · Tab for ¾ view</div>
       </main>

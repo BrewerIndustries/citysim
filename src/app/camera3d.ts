@@ -76,6 +76,37 @@ export class Camera3D {
     this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.zoom * Math.pow(1.22, -steps)));
   }
 
+  /**
+   * Zoom towards a point on screen rather than towards the middle.
+   *
+   * The difference between the two is most of why an orthographic camera feels awkward:
+   * zooming to the centre means every zoom is followed by a pan to put back what you were
+   * looking at. Keeping the cursor over the same ground makes the view feel dragged rather
+   * than driven.
+   *
+   * `px`/`py` are pixels from the top-left of the viewport.
+   */
+  zoomAtPixel(steps: number, px: number, py: number, width: number, height: number): void {
+    const before = this.zoom;
+    this.zoomBy(steps);
+    const after = this.zoom;
+    if (after === before) return;
+    // How far the cursor sits from the centre, in world units, before and after. The
+    // target moves by the difference so the ground under the cursor stays put.
+    const perPixel = (h: number) => (h * 2) / height;
+    const offX = px - width / 2;
+    const offY = py - height / 2;
+    const shift = perPixel(before) - perPixel(after);
+    const cosY = Math.cos(this.yaw);
+    const sinY = Math.sin(this.yaw);
+    // Screen right and screen "up the slope" in world space, same basis panByPixels uses.
+    const wx = offX * shift;
+    const wz = (offY * shift) / Math.max(0.2, Math.sin(this.tilt));
+    this.target.x += wx * cosY - wz * sinY;
+    this.target.z += -wx * sinY - wz * cosY;
+    this.clamp();
+  }
+
   /** Pan across the ground plane, in screen-relative pixels. */
   panByPixels(dx: number, dy: number, viewportHeight: number): void {
     const perPixel = (this.zoom * 2) / viewportHeight;

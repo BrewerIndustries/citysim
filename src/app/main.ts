@@ -821,7 +821,13 @@ forEachCanvas((el) => el.addEventListener('wheel', (e) => {
     const q = pointerPos(e);
     camera.zoomAt(e.deltaY < 0 ? 1 : -1, q.x, q.y, vw, vh);
   } else {
-    view3d?.cam.zoomBy(e.deltaY < 0 ? 1 : -1);
+    // Toward the cursor, not the centre — otherwise every zoom needs a pan afterwards to
+    // put back whatever you were looking at.
+    const r3 = canvas3d.getBoundingClientRect();
+    view3d?.cam.zoomAtPixel(
+      e.deltaY < 0 ? 1 : -1,
+      e.clientX - r3.left, e.clientY - r3.top, r3.width, r3.height,
+    );
   }
 }, { passive: false }));
 
@@ -964,8 +970,30 @@ window.addEventListener('keydown', (e) => {
     setViewMode(viewMode === 'plan' ? 'iso' : 'plan');
     return;
   }
+  // Arrows drive the camera in BOTH views. They are the only keys left: every letter
+  // that would read as a movement key — W, A, S, D, Q, E — is already a tool shortcut,
+  // and taking one back would be trading a thing you press constantly for a thing you
+  // press occasionally.
+  const arrow = ARROWS[e.key];
+  if (arrow) {
+    e.preventDefault();
+    const [vw2, vh2] = viewSize();
+    if (viewMode === 'iso' && view3d) {
+      if (e.shiftKey) {
+        // Shift turns the same keys into orbit: left and right swing round, up and down
+        // raise and lower the eye.
+        if (arrow.x) view3d.cam.rotate(arrow.x > 0 ? 1 : -1);
+        else view3d.cam.tiltBy(arrow.y > 0 ? -0.09 : 0.09);
+      } else {
+        view3d.cam.panByPixels(-arrow.x * PAN_STEP, -arrow.y * PAN_STEP, vh2);
+      }
+    } else {
+      camera.panByPixels(-arrow.x * PAN_STEP, -arrow.y * PAN_STEP, vw2, vh2);
+    }
+    return;
+  }
   if (viewMode === 'iso' && view3d) {
-    // Rotation and tilt only mean something in the ¾ view.
+    // Kept as they were, for anyone who learned them.
     if (e.key === ',' || e.key === '<') { view3d.cam.rotate(-1); return; }
     if (e.key === '.' || e.key === '>') { view3d.cam.rotate(1); return; }
     if (e.key === 'PageUp') { view3d.cam.tiltBy(0.09); return; }
@@ -988,6 +1016,15 @@ window.addEventListener('keydown', (e) => {
   }
 });
 window.addEventListener('keyup', (e) => { if (e.code === 'Space') spaceDown = false; });
+
+/** Pixels one arrow press moves the camera. A comfortable nudge, not a jump. */
+const PAN_STEP = 90;
+const ARROWS: Record<string, { x: number; y: number }> = {
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+};
 
 // ---------------------------------------------------------------- HUD
 const money = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(Math.round(n)).toLocaleString()}`;
@@ -1277,11 +1314,29 @@ function applyOverlay3d(force = false): void {
   view3d.setGroundOverlay(o.data, o.lut, o.max);
 }
 
+/** The on-screen camera pad. Only meaningful in the ¾ view, so only shown there. */
+function buildNavPad(): void {
+  const pad = $('navpad');
+  pad.onclick = (e) => {
+    const nav = (e.target as HTMLElement)?.dataset?.nav;
+    if (!nav || !view3d) return;
+    const [, vh] = viewSize();
+    if (nav === 'rot-l') view3d.cam.rotate(-1);
+    else if (nav === 'rot-r') view3d.cam.rotate(1);
+    else if (nav === 'tilt-up') view3d.cam.tiltBy(0.09);
+    else if (nav === 'tilt-down') view3d.cam.tiltBy(-0.09);
+    else if (nav === 'zoom-in') view3d.cam.zoomBy(1);
+    else if (nav === 'zoom-out') view3d.cam.zoomBy(-1);
+    void vh;
+  };
+}
+
 function setViewMode(mode: ViewMode): void {
   viewMode = mode;
   canvas.hidden = mode !== 'plan';
   canvas3d.hidden = mode !== 'iso';
   $('view-toggle').textContent = mode === 'plan' ? 'Plan' : '¾ view';
+  $('navpad').hidden = mode !== 'iso';
   if (mode === 'iso') {
     const v = ensure3d();
     v?.cam.lookAtCell(camera.cx, camera.cy);
@@ -1317,6 +1372,7 @@ function frame(): void {
 // Layers before tools: picking up a network tool shows its layer, so the layer list has
 // to exist before the first tool is selected.
 buildLayers();
+buildNavPad();
 buildTabs();
 buildTools();
 setTab(activeTab);

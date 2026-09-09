@@ -765,6 +765,11 @@ export function buildManual(): ManualSection[] {
           ['Scroll', 'Zoom'],
           ['Right-drag', 'Pan'],
         ])}
+        <p class="tip">The arrow keys drive the camera in both views, and with
+        <b>Shift</b> they turn and tilt the ¾ one. The buttons in the top right of the ¾
+        view do the same thing — the letters that would normally mean "move" are all tool
+        shortcuts here, and a tool you press constantly is worth more than a key you press
+        occasionally.</p>
         <p>Data layers work in both. In the ¾ view the layer is painted onto the ground, so
         you can read land value or pollution with the buildings still standing on it.</p>`,
     },
@@ -776,7 +781,10 @@ export function buildManual(): ManualSection[] {
           ['<kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd>, <kbd>q</kbd>–<kbd>r</kbd>', 'Select tool (shown on each button)'],
           ['Drag', 'Build. Roads draw a line; zoning and bulldoze paint a 3×3 brush'],
           ['Right-drag / <kbd>Space</kbd>+drag', 'Pan the map'],
-          ['Scroll', 'Zoom, anchored on the cursor'],
+          ['<kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd>', 'Pan, in either view'],
+          ['<kbd>Shift</kbd>+<kbd>←</kbd><kbd>→</kbd>', 'Turn the ¾ view'],
+          ['<kbd>Shift</kbd>+<kbd>↑</kbd><kbd>↓</kbd>', 'Raise or lower the eye'],
+          ['Scroll', 'Zoom, anchored on the cursor in both views'],
           ['<kbd>=</kbd> / <kbd>-</kbd>', 'Zoom in / out'],
           ['<kbd>[</kbd> / <kbd>]</kbd>', 'Slower / faster'],
           ['<kbd>P</kbd>', 'Pause'],

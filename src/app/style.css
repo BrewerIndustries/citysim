@@ -116,6 +116,15 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .layer-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 .densities.targets button { padding: 3px 5px; }
 .densities.levels button { padding: 3px 5px; }
+/* Camera controls for the ¾ view. On screen because the alternative is a key list
+   nobody reads, and a camera you cannot work is a view nobody uses. */
+#navpad { position: absolute; right: 12px; top: 46px; display: grid;
+  grid-template-columns: repeat(2, 28px); gap: 3px; z-index: 3; }
+#navpad[hidden] { display: none; }
+#navpad button { width: 28px; height: 26px; font-size: 13px; line-height: 1;
+  border-radius: 5px; background: rgba(18,20,24,0.74); color: var(--muted);
+  border: 1px solid var(--line); cursor: pointer; }
+#navpad button:hover { color: var(--text); background: rgba(30,34,40,0.9); }
 .subhead { font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em;
   color: var(--dim); margin: 10px 0 4px; font-weight: 600; }
 .layers { display: flex; flex-wrap: wrap; gap: 3px; }

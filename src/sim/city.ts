@@ -285,7 +285,7 @@ export class City {
     this.sourcesAllDirty = true;
     this.recountUpkeep();
     for (let n = 0; n < ticks; n++) {
-      if (this.roadsDirty) { recomputeRoadDistance(this.grid, this.tiles, this.queue); this.roadsDirty = false; }
+      if (this.roadsDirty) this.rebuildRoadNetwork();
       if (this.civicsDirty) { this.writeCivicSources(); this.civicsDirty = false; }
       this.applySourceChanges();
       this.sim.step();
@@ -326,15 +326,7 @@ export class City {
 
   step(): void {
     if (this.profiling) this.profile = {};
-    if (this.roadsDirty) {
-      recomputeRoadDistance(this.grid, this.tiles, this.queue);
-      // Which road each cell pulls out onto only changes when the network does, so it
-      // rides along with the distance field rather than being redone every tick.
-      recomputeNearestRoad(this.grid, this.tiles, this.nearestRoad, this.queue);
-      this.roadListCount = listRoads(this.grid, this.tiles, this.roadList);
-      markCrossings(this.grid, this.tiles, this.roadList, this.roadListCount, this.crossings);
-      this.roadsDirty = false;
-    }
+    if (this.roadsDirty) this.rebuildRoadNetwork();
     if (this.civicsDirty) {
       this.writeCivicSources();
       this.civicsDirty = false;
@@ -1315,6 +1307,26 @@ export class City {
       this.wasteOverflow = overflow;
       this.sourcesAllDirty = true;
     }
+  }
+
+  /**
+   * Everything derived from where the roads are.
+   *
+   * ONE method, because there were two places clearing `roadsDirty` and they did
+   * different amounts of work: the settle path recomputed only the distance field, so a
+   * freshly loaded city was left with a zero-filled `nearestRoad` — and since 0 is a
+   * valid cell index rather than a "nobody", every trip in the city was assigned to the
+   * corner of the map. No road anywhere showed any traffic, and the one tile that did was
+   * not a road, so nothing ever cleared it and it climbed until it saturated.
+   */
+  private rebuildRoadNetwork(): void {
+    recomputeRoadDistance(this.grid, this.tiles, this.queue);
+    // Which road each cell pulls out onto only changes when the network does, so it
+    // rides along with the distance field rather than being redone every tick.
+    recomputeNearestRoad(this.grid, this.tiles, this.nearestRoad, this.queue);
+    this.roadListCount = listRoads(this.grid, this.tiles, this.roadList);
+    markCrossings(this.grid, this.tiles, this.roadList, this.roadListCount, this.crossings);
+    this.roadsDirty = false;
   }
 
   /** A pump works beside open water, or on ground with enough underground water. */

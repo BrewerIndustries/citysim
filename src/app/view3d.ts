@@ -14,8 +14,8 @@ import type { Snapshot } from './protocol.ts';
 import { SEA_LEVEL } from '../sim/terrain.ts';
 import { CIVIC_BY_ID } from '../sim/tiles.ts';
 import {
-  roadTextures, roadCornerTextures, junctionTexture, facadeTexture, roofTexture,
-  groundTexture,
+  roadTextures, roadCornerTextures, junctionTexture, facadeTextures, roofTexture,
+  groundTexture, type FacadeKind,
 } from './textures.ts';
 
 /** Storeys are exaggerated slightly, like an architect's model. */
@@ -63,6 +63,9 @@ const MAX_ROADS = 120_000;
  * an enum is syntax that has no runtime to erase to.
  */
 const Piece = { Straight: 0, Corner: 1, Junction: 2 } as const;
+
+/** The kinds of building that get their own facade. */
+const BUILDING_KINDS: readonly FacadeKind[] = ['residential', 'commercial', 'industrial', 'civic'];
 
 /**
  * How many trips one drawn car stands for.
@@ -113,7 +116,7 @@ export class View3D {
   /** Baked once and reused: rebuilding the ground must not re-bake its texture. */
   private groundMap: THREE.CanvasTexture | null = null;
   private water: THREE.Mesh | null = null;
-  private buildings: THREE.InstancedMesh;
+  private readonly buildingMeshes = new Map<FacadeKind, THREE.InstancedMesh>();
   /**
    * One mesh per road class, plus one for unmarked tiles.
    *
@@ -192,19 +195,26 @@ export class View3D {
     // BoxGeometry groups are +X, -X, +Y, -Y, +Z, -Z, so a material array puts windows on
     // the walls and a roof on the roof. Without this a building wears its facade on top,
     // and the roof is the face a ¾ camera sees most.
-    const facade = new THREE.MeshLambertMaterial({ map: facadeTexture() });
+    // One mesh per KIND of building, not one for all of them. A single facade made a
+    // city read as one material at three heights; housing, offices and sheds are
+    // different buildings and should look it.
     const roof = new THREE.MeshLambertMaterial({ map: roofTexture() });
-    this.buildings = new THREE.InstancedMesh(
-      box, [facade, facade, roof, roof, facade, facade], MAX_BUILDINGS,
-    );
-    this.buildings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.buildings.count = 0;
-    this.buildings.frustumCulled = false;
-    // Buildings cast onto the ground and onto each other, and take shadow from their
-    // neighbours — a street of towers with no shadows between them reads as a diagram.
-    this.buildings.castShadow = true;
-    this.buildings.receiveShadow = true;
-    this.scene.add(this.buildings);
+    const faces = facadeTextures();
+    for (const kind of BUILDING_KINDS) {
+      const facade = new THREE.MeshLambertMaterial({ map: faces[kind] });
+      const mesh = new THREE.InstancedMesh(
+        box, [facade, facade, roof, roof, facade, facade], MAX_BUILDINGS,
+      );
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+      // Buildings cast onto the ground and onto each other, and take shadow from their
+      // neighbours — a street of towers with no shadows between them reads as a diagram.
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+      this.buildingMeshes.set(kind, mesh);
+    }
 
     const slab = new THREE.BoxGeometry(1, 1, 1);
     slab.translate(0, 0.5, 0);
@@ -415,7 +425,8 @@ export class View3D {
     const r = this.cam.visibleCells(aspect, this.gridW, this.gridH);
     const w = this.gridW;
 
-    let b = 0;
+    const bCounts = new Map<FacadeKind, number>();
+    for (const kind of BUILDING_KINDS) bCounts.set(kind, 0);
     // One running count per road mesh, keyed the same way the meshes are.
     const counts = new Map<number, number>();
     for (const id of this.roadMeshes.keys()) counts.set(id, 0);
@@ -564,6 +575,12 @@ export class View3D {
         // texture swatch rather than a building, and is the fastest way to lose the sense
         // of scale the whole massing pass exists to establish.
         if (civicId && !civicAnchor[i]) continue;
+        const kind: FacadeKind = civicId ? 'civic'
+          : zone[i] === 2 ? 'commercial'
+          : zone[i] === 3 ? 'industrial'
+          : 'residential';
+        const mesh = this.buildingMeshes.get(kind)!;
+        const b = bCounts.get(kind)!;
         if (b >= MAX_BUILDINGS) continue;
 
         let height: number;
@@ -592,15 +609,17 @@ export class View3D {
         this.dummy.position.set(x * CELL + off, base, y * CELL + off);
         this.dummy.scale.set(span * 0.9, Math.max(0.12, height), span * 0.9);
         this.dummy.updateMatrix();
-        this.buildings.setMatrixAt(b, this.dummy.matrix);
-        this.buildings.setColorAt(b, this.colour);
-        b++;
+        mesh.setMatrixAt(b, this.dummy.matrix);
+        mesh.setColorAt(b, this.colour);
+        bCounts.set(kind, b + 1);
       }
     }
 
-    this.buildings.count = b;
-    this.buildings.instanceMatrix.needsUpdate = true;
-    if (this.buildings.instanceColor) this.buildings.instanceColor.needsUpdate = true;
+    for (const [kind, mesh] of this.buildingMeshes) {
+      mesh.count = bCounts.get(kind) ?? 0;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
     for (const [id, mesh] of this.roadMeshes) {
       mesh.count = counts.get(id) ?? 0;
       mesh.instanceMatrix.needsUpdate = true;
