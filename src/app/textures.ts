@@ -18,6 +18,14 @@ import { ROAD_CLASSES, type RoadClass } from '../sim/roads.ts';
 
 /** Texels per tile. Enough to read lane markings at full zoom, small enough to be free. */
 const TILE_PX = 64;
+/**
+ * Verge either side of the carriageway, as a fraction of the tile, left transparent.
+ *
+ * Wide enough that a bend visibly curves, narrow enough that a straight road still looks
+ * like a road rather than a footpath. This is the number that turns a grid of squares
+ * into a network of ribbons.
+ */
+const VERGE = 0.11;
 
 /** Deterministic value noise, so a texture is the same every run. */
 function hash(x: number, y: number, seed: number): number {
@@ -71,21 +79,25 @@ function finish(c: HTMLCanvasElement, repeat = 1): THREE.CanvasTexture {
  */
 export function roadTexture(def: RoadClass): THREE.CanvasTexture {
   const { c, g } = canvas(TILE_PX, TILE_PX);
+  // The verges are left TRANSPARENT so the carriageway is a ribbon rather than a square.
+  // This is what lets a bend have a curved silhouette: with the tile filled edge to edge,
+  // the markings can sweep round the corner all they like and the road's OUTLINE is still
+  // a staircase. Cut out by alphaTest in the material, not blending, so it costs nothing
+  // and shadows respect it.
+  const edge = TILE_PX * VERGE;
   // Asphalt, tinted a little towards the class colour so the hierarchy survives at the
   // zoom levels where individual markings stop being readable.
   g.fillStyle = def.colour;
-  g.fillRect(0, 0, TILE_PX, TILE_PX);
+  g.fillRect(0, edge, TILE_PX, TILE_PX - edge * 2);
   // Darkened towards tarmac, but only a little: a map MULTIPLIES the lit surface, so
   // anything heavy here comes back as a black road no amount of light will recover.
   g.fillStyle = 'rgba(18,19,22,0.34)';
-  g.fillRect(0, 0, TILE_PX, TILE_PX);
+  g.fillRect(0, edge, TILE_PX, TILE_PX - edge * 2);
   grain(g, TILE_PX, TILE_PX, def.id * 977, 22);
-
-  const edge = TILE_PX * 0.085;
   // Kerb lines: what makes a tile read as a road rather than a grey square.
   g.fillStyle = 'rgba(232,236,244,0.55)';
-  g.fillRect(0, edge - 1, TILE_PX, 1.5);
-  g.fillRect(0, TILE_PX - edge, TILE_PX, 1.5);
+  g.fillRect(0, edge, TILE_PX, 1.5);
+  g.fillRect(0, TILE_PX - edge - 1.5, TILE_PX, 1.5);
 
   const usable = TILE_PX - edge * 2;
   const lanes = def.lanes;
@@ -119,11 +131,73 @@ export function roadTexture(def: RoadClass): THREE.CanvasTexture {
 }
 
 /**
+ * A quarter turn: the carriageway sweeping from one edge to the next.
+ *
+ * This is what makes a curve look curved. A tile grid can only put road cells on a
+ * staircase, but a bend does not have to be DRAWN as a square — a corner piece with the
+ * carriageway arcing across it turns the staircase into a road that flows, which is how
+ * every tile-based city builder has done it since the nineties.
+ *
+ * The base piece connects the WEST edge to the SOUTH edge; the renderer rotates it to
+ * the other three quadrants.
+ */
+export function roadCornerTexture(def: RoadClass): THREE.CanvasTexture {
+  const { c, g } = canvas(TILE_PX, TILE_PX);
+  // The turn is centred on the corner the two edges share, so the arc meets each edge at
+  // its midpoint — exactly where a straight piece's carriageway meets it.
+  const cx = 0;
+  const cy = TILE_PX;
+  const mid = TILE_PX / 2;
+  const halfWidth = mid - TILE_PX * VERGE;
+  const arc = (radius: number, style: string, width: number, dash: number[] = []) => {
+    g.strokeStyle = style;
+    g.lineWidth = width;
+    g.setLineDash(dash);
+    g.beginPath();
+    g.arc(cx, cy, radius, -Math.PI / 2, 0);
+    g.stroke();
+    g.setLineDash([]);
+  };
+
+  // The carriageway itself, as one thick arc. Everything outside it stays transparent,
+  // so the bend's silhouette is a curve rather than the corner of a square.
+  arc(mid, def.colour, halfWidth * 2);
+  arc(mid, 'rgba(18,19,22,0.34)', halfWidth * 2);
+  grain(g, TILE_PX, TILE_PX, def.id * 977 + 13, 22);
+
+  // Kerbs on the inside and outside of the bend.
+  arc(mid - halfWidth + 0.75, 'rgba(232,236,244,0.55)', 1.5);
+  arc(mid + halfWidth - 0.75, 'rgba(232,236,244,0.55)', 1.5);
+
+  const lanes = def.lanes;
+  if (lanes >= 8) {
+    arc(mid, 'rgba(210,216,226,0.85)', 4);
+  } else if (lanes >= 4) {
+    arc(mid - 1.75, 'rgba(244,222,132,0.95)', 1.5);
+    arc(mid + 1.75, 'rgba(244,222,132,0.95)', 1.5);
+  } else {
+    arc(mid, 'rgba(244,222,132,0.9)', 1.5, [9, 7]);
+  }
+
+  // Lane separators, dashed, following the bend rather than crossing it.
+  const laneW = (halfWidth * 2) / lanes;
+  for (let n = 1; n < lanes; n++) {
+    const radius = mid - halfWidth + n * laneW;
+    if (Math.abs(radius - mid) < laneW * 0.4) continue;
+    arc(radius, 'rgba(232,236,244,0.62)', 1, [6, 6]);
+  }
+
+  return finish(c);
+}
+
+/**
  * Unmarked carriageway, for the tiles where markings would be nonsense: crossings,
  * roundabout rings, and the stub ends of a road that goes nowhere yet.
  */
 export function junctionTexture(): THREE.CanvasTexture {
   const { c, g } = canvas(TILE_PX, TILE_PX);
+  // Full square, unlike the pieces: a crossing really does pave its whole cell, and a
+  // junction with verges cut out of it would leave holes where the roads meet.
   g.fillStyle = '#585d68';
   g.fillRect(0, 0, TILE_PX, TILE_PX);
   grain(g, TILE_PX, TILE_PX, 4241, 20);
@@ -217,7 +291,12 @@ export function groundTexture(): THREE.CanvasTexture {
   return finish(c);
 }
 
-/** Every road class's texture, built once and shared. */
+/** Every road class's straight piece, built once and shared. */
 export function roadTextures(): Map<number, THREE.CanvasTexture> {
   return new Map(ROAD_CLASSES.map((c) => [c.id, roadTexture(c)]));
+}
+
+/** And every class's quarter turn. */
+export function roadCornerTextures(): Map<number, THREE.CanvasTexture> {
+  return new Map(ROAD_CLASSES.map((c) => [c.id, roadCornerTexture(c)]));
 }

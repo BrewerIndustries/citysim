@@ -14,7 +14,8 @@ import type { Snapshot } from './protocol.ts';
 import { SEA_LEVEL } from '../sim/terrain.ts';
 import { CIVIC_BY_ID } from '../sim/tiles.ts';
 import {
-  roadTextures, junctionTexture, facadeTexture, roofTexture, groundTexture,
+  roadTextures, roadCornerTextures, junctionTexture, facadeTexture, roofTexture,
+  groundTexture,
 } from './textures.ts';
 
 /** Storeys are exaggerated slightly, like an architect's model. */
@@ -55,6 +56,14 @@ export interface Terrain3D {
 /** Max blocks drawn in one frame. Beyond this the far ones are dropped, not queued. */
 const MAX_BUILDINGS = 120_000;
 const MAX_ROADS = 120_000;
+/**
+ * Which piece of road kit a tile is, decided by which neighbours it joins.
+ *
+ * A plain object rather than an enum: this project type-strips rather than compiles, so
+ * an enum is syntax that has no runtime to erase to.
+ */
+const Piece = { Straight: 0, Corner: 1, Junction: 2 } as const;
+
 /** Planted tiles drawn at once. Trees are cheap but there is no point drawing a forest. */
 const MAX_TREES = 90_000;
 /** Canopy colours, darkest at the densest planting. */
@@ -88,6 +97,8 @@ export class View3D {
    * network you can read the width of.
    */
   private readonly roadMeshes = new Map<number, THREE.InstancedMesh>();
+  /** The quarter-turn piece per class. What makes a curve read as a curve. */
+  private readonly cornerMeshes = new Map<number, THREE.InstancedMesh>();
   private junctions!: THREE.InstancedMesh;
   /** Planting. Cones, because a cone at this scale is unmistakably a tree. */
   private trees!: THREE.InstancedMesh;
@@ -174,7 +185,9 @@ export class View3D {
     // sides of an elevated deck. The sides are the concrete the deck is made of.
     const deckSide = new THREE.MeshLambertMaterial({ color: 0x6a6e78 });
     const roadMesh = (map: THREE.Texture): THREE.InstancedMesh => {
-      const top = new THREE.MeshLambertMaterial({ map });
+      // alphaTest, not transparency: the verges are cut out rather than blended, so there
+      // is no sort order to get wrong and the shadow pass respects the cutout for free.
+      const top = new THREE.MeshLambertMaterial({ map, alphaTest: 0.5 });
       const m = new THREE.InstancedMesh(
         slab, [deckSide, deckSide, top, deckSide, deckSide, deckSide], MAX_ROADS,
       );
@@ -189,6 +202,7 @@ export class View3D {
       return m;
     };
     for (const [id, tex] of roadTextures()) this.roadMeshes.set(id, roadMesh(tex));
+    for (const [id, tex] of roadCornerTextures()) this.cornerMeshes.set(id, roadMesh(tex));
     this.junctions = roadMesh(junctionTexture());
 
     // A cone on a short trunk. Cheap, and the silhouette does all the work at ¾ — the
@@ -358,6 +372,8 @@ export class View3D {
     // One running count per road mesh, keyed the same way the meshes are.
     const counts = new Map<number, number>();
     for (const id of this.roadMeshes.keys()) counts.set(id, 0);
+    const cornerCounts = new Map<number, number>();
+    for (const id of this.cornerMeshes.keys()) cornerCounts.set(id, 0);
     let jn = 0;
     let tr = 0;
     for (let y = r.y0; y <= r.y1; y++) {
@@ -366,27 +382,58 @@ export class View3D {
         const base = this.heightAt(i);
 
         if (road[i]) {
-          // Which way the carriageway runs, so its markings run along it rather than
-          // across it. A tile with road on both axes is a crossing, and lane markings
-          // through a crossing would be a lie — those get the unmarked surface, as does
-          // anything inside a junction.
+          // Which PIECE this tile is, from which of its four neighbours it joins.
+          //
+          // The previous version asked only "does it run east-west or north-south" and
+          // sent anything that was both to the unmarked junction surface. Every tile on a
+          // bend has both, so every bend was drawn as an intersection — which is exactly
+          // why a curve looked like a chain of crossings rather than a road. A bend with
+          // exactly two perpendicular neighbours is a CORNER, and gets a piece with the
+          // carriageway arcing across it.
           const lvlHere = roadLevel[i];
-          const joins = (n: number): boolean =>
-            road[n] === 1 && Math.abs(roadLevel[n] - lvlHere) <= 1;
-          const ew = (x > r.x0 && joins(i - 1)) || (x < this.gridW - 1 && joins(i + 1));
-          const ns = (y > r.y0 && joins(i - w)) || (y < this.gridH - 1 && joins(i + w));
-          const marked = junction[i] === 0 && (ew !== ns);
+          const joins = (nx: number, ny: number): boolean => {
+            if (nx < 0 || ny < 0 || nx >= this.gridW || ny >= this.gridH) return false;
+            const n = ny * w + nx;
+            return road[n] === 1 && Math.abs(roadLevel[n] - lvlHere) <= 1;
+          };
+          const north = joins(x, y - 1);
+          const south = joins(x, y + 1);
+          const west = joins(x - 1, y);
+          const east = joins(x + 1, y);
+          const links = (north ? 1 : 0) + (south ? 1 : 0) + (west ? 1 : 0) + (east ? 1 : 0);
 
-          const mesh = marked ? this.roadMeshes.get(roadClass[i]) : this.junctions;
+          const piece = junction[i] ? Piece.Junction
+            : links >= 3 ? Piece.Junction
+            : (west && south) || (south && east) || (east && north) || (north && west)
+              ? Piece.Corner
+              : Piece.Straight;
+
+          const mesh = piece === Piece.Junction ? this.junctions
+            : piece === Piece.Corner ? this.cornerMeshes.get(roadClass[i])
+            : this.roadMeshes.get(roadClass[i]);
           if (!mesh) continue;
-          const slot = marked ? (counts.get(roadClass[i]) ?? 0) : jn;
+          const slot = piece === Piece.Junction ? jn
+            : piece === Piece.Corner ? (cornerCounts.get(roadClass[i]) ?? 0)
+            : (counts.get(roadClass[i]) ?? 0);
           if (slot >= MAX_ROADS) continue;
+
+          // Rotation. Rotating +90° about Y maps local -X to world +Z, so the base corner
+          // (west→south) sweeps round the quadrants in that order.
+          let turn = 0;
+          if (piece === Piece.Corner) {
+            turn = (west && south) ? 0
+              : (south && east) ? Math.PI / 2
+              : (east && north) ? Math.PI
+              : -Math.PI / 2;
+          } else if (piece === Piece.Straight) {
+            turn = (north || south) && !(east || west) ? Math.PI / 2 : 0;
+          }
 
           // A raised carriageway has to be raised HERE too, or a flyover renders lying on
           // the ground passing through the road it is supposed to bridge.
           const lift = lvlHere * DECK_HEIGHT;
           this.dummy.position.set(x * CELL, base + lift, y * CELL);
-          this.dummy.rotation.y = marked && ns ? Math.PI / 2 : 0;
+          this.dummy.rotation.y = turn;
           this.dummy.scale.set(CELL, lvlHere > 0 ? 0.14 : 0.08, CELL);
           this.dummy.updateMatrix();
           this.dummy.rotation.y = 0;
@@ -397,8 +444,9 @@ export class View3D {
           if (junction[i]) this.colour.lerp(JUNCTION_TINT, 0.35);
           if (lvlHere > 0) this.colour.lerp(DECK_TINT, 0.16 * lvlHere);
           mesh.setColorAt(slot, this.colour);
-          if (marked) counts.set(roadClass[i], slot + 1);
-          else jn = slot + 1;
+          if (piece === Piece.Junction) jn = slot + 1;
+          else if (piece === Piece.Corner) cornerCounts.set(roadClass[i], slot + 1);
+          else counts.set(roadClass[i], slot + 1);
           continue;
         }
 
@@ -478,6 +526,11 @@ export class View3D {
     this.trees.count = tr;
     this.trees.instanceMatrix.needsUpdate = true;
     if (this.trees.instanceColor) this.trees.instanceColor.needsUpdate = true;
+    for (const [id, mesh] of this.cornerMeshes) {
+      mesh.count = cornerCounts.get(id) ?? 0;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
     this.junctions.count = jn;
     this.junctions.instanceMatrix.needsUpdate = true;
     if (this.junctions.instanceColor) this.junctions.instanceColor.needsUpdate = true;
