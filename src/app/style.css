@@ -47,8 +47,20 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .speeds button[aria-pressed="true"] { background: var(--accent); color: #08110f; font-weight: 600; }
 
 /* ---------- tool rail ---------- */
-#tools { grid-area: tools; background: var(--chrome); border-right: 1px solid var(--line);
-  padding: 10px 8px; overflow-y: auto; min-height: 0; }
+/* The rail is a column so the section row stays pinned while the tools under it scroll:
+   scrolling away the control that decides what you are looking at is disorienting. */
+#rail { grid-area: tools; display: flex; flex-direction: column; min-height: 0;
+  background: var(--chrome); border-right: 1px solid var(--line); }
+#tools { flex: 1; padding: 10px 8px; overflow-y: auto; min-height: 0; }
+
+/* Sections subdivide one tab, so they are a segmented control in the rail rather than a
+   second full-width bar — a band across the window would read as more tabs. */
+#sections { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px 8px 0; }
+#sections[hidden] { display: none; }
+#sections button { flex: 1 1 auto; font: inherit; font-size: 10.5px; padding: 5px 6px;
+  border-radius: 5px; background: var(--chrome-2); color: var(--dim); white-space: nowrap; }
+#sections button:hover { color: var(--text); }
+#sections button[aria-selected="true"] { background: var(--accent); color: #08110f; font-weight: 600; }
 /* Full width rather than inside the rail: seven tabs in a 168px column wrap to four
    rows and eat the space the tools need. */
 #tabs { grid-area: tabs; display: flex; align-items: stretch; gap: 2px; padding: 0 8px;

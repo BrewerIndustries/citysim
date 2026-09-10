@@ -159,8 +159,12 @@ space-drag to pan.
   pipes and sewers while leaving zoning and buildings alone. Clears everything on a tile
   by default; a target row narrows it to one network when you need to pull a sewer out
   from under a street you are keeping.
-- **Workspace tabs** — seven tabs across the top split the rail by the job at hand rather
-  than showing all forty-six tools at once. Inspect, Remove and Bulldoze stay in every tab.
+- **Workspace tabs and sections** — seven tabs across the top split the rail by the job at
+  hand rather than showing all forty-six tools at once, and the broad tabs split again into
+  sections in the rail: Public Works into Land, Roads and Utilities, Environment into Parks,
+  Cleanup and Refuse. Each tab remembers the section you left it on, a tab with only one
+  section shows no section row, and a shortcut key for a hidden tool jumps the rail to it.
+  Inspect, Remove and Bulldoze stay in every tab.
 - **Roads with classes** — Street, Avenue, Arterial, Motorway, at two to eight lanes. Per
   unit of capacity a motorway is the efficient buy, exactly as in reality; what stops you
   paving everything wide is the absolute bill for capacity a cul-de-sac will never use. And

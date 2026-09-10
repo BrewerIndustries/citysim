@@ -4,7 +4,7 @@ import { CityRenderer, type Overlay } from './render.ts';
 import { View3D } from './view3d.ts';
 import { LAYERS, RAMPS, buildLut, toggleLayer } from './palette.ts';
 import {
-  TOOLS, TABS, DENSITY_LABELS, DRAW_MODES, REMOVE_TARGETS, tabOfGroup, lineCells,
+  TOOLS, TABS, DENSITY_LABELS, DRAW_MODES, REMOVE_TARGETS, placeOfGroup, lineCells,
   curveCells, brushCells, rectCells, anchorFor, modesFor, type Tool, type DrawMode,
 } from './tools.ts';
 import { REASON, REASON_TEXT, requiredDesirability } from '../sim/growth.ts';
@@ -122,23 +122,38 @@ function undoLabel(): string {
 let activeTab = TABS[0].id;
 
 /**
- * Show one tab's groups.
+ * The section each tab was last left on.
+ *
+ * Per tab rather than one global, because coming back to a tab and finding it reset is
+ * the small annoyance that makes you stop using the tabs: you go to Public Works to keep
+ * laying sewers, not to be put back on Land every time.
+ */
+const activeSection = new Map<string, string>(TABS.map((t) => [t.id, t.sections[0].id]));
+
+/**
+ * Show one tab's groups, and within it one section's.
  *
  * Every group is built once and then shown or hidden, rather than the rail being torn
  * down and rebuilt on each switch: the density, draw-mode and remove-target rows are
  * built alongside their tools and carry live handlers, and rebuilding them on every tab
  * change is a lot of moving parts to get wrong for no gain.
  */
-function setTab(id: string): void {
+function setTab(id: string, section?: string): void {
   activeTab = id;
+  const tab = TABS.find((t) => t.id === id);
+  if (section && tab?.sections.some((s) => s.id === section)) activeSection.set(id, section);
+  const shown = activeSection.get(id);
+
   for (const b of document.querySelectorAll<HTMLElement>('#tabs button')) {
     b.setAttribute('aria-selected', String(b.dataset.tab === id));
   }
   for (const g of document.querySelectorAll<HTMLElement>('.toolgroup')) {
     // The always-on group is the pointer and the two ways of taking things away; losing
     // those when you change tab would be actively annoying.
-    g.hidden = g.dataset.tab !== 'always' && g.dataset.tab !== id;
+    g.hidden = g.dataset.tab !== 'always'
+      && (g.dataset.tab !== id || (g.dataset.section !== undefined && g.dataset.section !== shown));
   }
+  buildSections();
 }
 
 function buildTabs(): void {
@@ -156,6 +171,32 @@ function buildTabs(): void {
   }
 }
 
+/**
+ * The section row, at the top of the rail rather than under the tabs.
+ *
+ * It filters the rail, so it lives in the rail — a full-width band across the window
+ * controlling a 168px column reads as a second set of tabs rather than as a subdivision
+ * of the first. Rebuilt on each tab change because it is six buttons with no state of
+ * their own, unlike the tool groups below it.
+ */
+function buildSections(): void {
+  const bar = $('sections');
+  const tab = TABS.find((t) => t.id === activeTab);
+  bar.innerHTML = '';
+  // One section is not a choice, and a row showing it is a row of wasted height.
+  bar.hidden = !tab || tab.sections.length < 2;
+  if (bar.hidden || !tab) return;
+  const shown = activeSection.get(tab.id);
+  for (const s of tab.sections) {
+    const b = document.createElement('button');
+    b.textContent = s.label;
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', String(s.id === shown));
+    b.onclick = () => setTab(tab.id, s.id);
+    bar.appendChild(b);
+  }
+}
+
 function buildTools(): void {
   const rail = $('tools');
   rail.innerHTML = '';
@@ -164,10 +205,17 @@ function buildTools(): void {
   for (const t of TOOLS) {
     if (t.group !== group) {
       group = t.group;
+      const place = placeOfGroup(group);
+      const owner = place && TABS.find((tb) => tb.id === place.tab);
       container = document.createElement('div');
       container.className = 'toolgroup';
-      container.dataset.tab = tabOfGroup(group) ?? 'always';
-      container.innerHTML = `<h3>${group}</h3>`;
+      container.dataset.tab = place?.tab ?? 'always';
+      if (place) container.dataset.section = place.section;
+      // When the section button above already says "Land", a "LAND" heading under it is
+      // the same word twice. Only applies where a section bar actually shows.
+      const named = owner && owner.sections.length > 1
+        && owner.sections.find((sec) => sec.id === place!.section)?.label === group;
+      container.innerHTML = named ? '' : `<h3>${group}</h3>`;
       rail.appendChild(container);
     }
     const b = document.createElement('button');
@@ -291,8 +339,8 @@ function selectTool(t: Tool): void {
   // A keyboard shortcut can reach a tool whose tab is not showing; follow it there
   // rather than leaving the rail pointing somewhere else.
   if (t.kind === 'road' && t.roadClass) junctionRoadClass = t.roadClass;
-  const tab = tabOfGroup(t.group);
-  if (tab && tab !== activeTab) setTab(tab);
+  const place = placeOfGroup(t.group);
+  if (place) setTab(place.tab, place.section);
   for (const b of document.querySelectorAll<HTMLElement>('.tool')) {
     b.setAttribute('aria-pressed', String(b.dataset.id === t.id));
   }

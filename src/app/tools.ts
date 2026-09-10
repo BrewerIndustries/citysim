@@ -74,34 +74,53 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
   .filter((k) => !RESERVED_KEYS.has(k));
 
 /**
- * The workspace tabs.
+ * The workspace tabs, and the sections inside them.
  *
  * Forty-six tools in one rail is a wall, and most of them are irrelevant to whatever you
  * are actually doing: laying sewers has nothing to do with choosing a power plant. Tabs
- * split the rail by the JOB you are doing, so the rail shows ten things instead of
- * forty-six and the groups inside it stay as the headings they already were.
+ * split the rail by the JOB you are doing, and sections split a big job into the parts
+ * you do one at a time — shaping the ground, drawing the streets, running the services.
  *
- * A tab owns GROUPS, not tools — the group a tool belongs to already exists and is the
- * thing the rail headings are built from, so this is one mapping rather than a second
- * label on every tool that could fall out of step with the first. `test/tools.test.ts`
- * pins that every group lands in exactly one tab.
+ * A section owns GROUPS, not tools — the group a tool belongs to already exists and is
+ * the thing the rail headings are built from, so this is one mapping rather than a second
+ * label on every tool that could fall out of step with the first. A tab's `groups` is
+ * derived from its sections below, so there is still exactly one place that decides where
+ * a group lives. `test/unlocks.test.ts` pins that every group lands in exactly one tab.
+ *
+ * Tabs with a single section show no section bar: a row of one choice is not a choice.
  */
-export const TABS: ReadonlyArray<{ id: string; label: string; groups: string[]; hint: string }> = [
+export interface Section { id: string; label: string; groups: string[] }
+export interface Tab { id: string; label: string; hint: string; sections: Section[]; groups: string[] }
+
+const TAB_DEFS: ReadonlyArray<Omit<Tab, 'groups'>> = [
   { id: 'works', label: 'Public Works', hint: 'Roads, and the power, water and sewer networks',
-    groups: ['Land', 'Roads', 'Utilities', 'Power', 'Water'] },
+    sections: [
+      { id: 'land', label: 'Land', groups: ['Land'] },
+      { id: 'roads', label: 'Roads', groups: ['Roads'] },
+      { id: 'utilities', label: 'Utilities', groups: ['Utilities', 'Power', 'Water'] },
+    ] },
   { id: 'zoning', label: 'Zoning', hint: 'What the city is allowed to build where',
-    groups: ['Zoning'] },
+    sections: [{ id: 'zoning', label: 'Zoning', groups: ['Zoning'] }] },
   { id: 'education', label: 'Education', hint: 'Schools and universities',
-    groups: ['Education'] },
+    sections: [{ id: 'education', label: 'Education', groups: ['Education'] }] },
   { id: 'safety', label: 'Safety', hint: 'Police and fire',
-    groups: ['Safety'] },
+    sections: [{ id: 'safety', label: 'Safety', groups: ['Safety'] }] },
   { id: 'environment', label: 'Environment', hint: 'Parks, cleanup and refuse',
-    groups: ['Parks', 'Environment', 'Refuse'] },
+    sections: [
+      { id: 'parks', label: 'Parks', groups: ['Parks'] },
+      { id: 'cleanup', label: 'Cleanup', groups: ['Environment'] },
+      { id: 'refuse', label: 'Refuse', groups: ['Refuse'] },
+    ] },
   { id: 'transit', label: 'Transit', hint: 'Moving people without a car',
-    groups: ['Transit'] },
+    sections: [{ id: 'transit', label: 'Transit', groups: ['Transit'] }] },
   { id: 'works-world', label: 'World Works', hint: 'One per city, forever',
-    groups: ['World works'] },
+    sections: [{ id: 'world', label: 'World works', groups: ['World works'] }] },
 ];
+
+export const TABS: ReadonlyArray<Tab> = TAB_DEFS.map((t) => ({
+  ...t,
+  groups: t.sections.flatMap((s) => s.groups),
+}));
 
 /**
  * Tools every tab shows, because they are how you look at and undo everything else.
@@ -112,6 +131,20 @@ export const ALWAYS_ON = new Set(['inspect', 'remove', 'bulldoze']);
 /** The tab a group belongs to, or undefined if nothing claims it. */
 export function tabOfGroup(group: string): string | undefined {
   return TABS.find((t) => t.groups.includes(group))?.id;
+}
+
+/**
+ * Where a group lives, as the pair you need to show it: tab and section.
+ *
+ * A shortcut can reach a tool whose section is not showing, and switching the tab alone
+ * would land you in the right tab looking at the wrong half of it.
+ */
+export function placeOfGroup(group: string): { tab: string; section: string } | undefined {
+  for (const t of TABS) {
+    const s = t.sections.find((sec) => sec.groups.includes(group));
+    if (s) return { tab: t.id, section: s.id };
+  }
+  return undefined;
 }
 
 /** Which rail section each building belongs to. */

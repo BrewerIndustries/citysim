@@ -17,7 +17,7 @@ import { LAND_VALUE_BASE, LAND_VALUE_TERMS } from '../sim/sim.ts';
 import { CELL_METRES } from '../sim/grid.ts';
 import { SHORE_AMENITY } from '../sim/city.ts';
 import { LAYERS, MAX_LAYERS } from './palette.ts';
-import { REMOVE_TARGETS } from './tools.ts';
+import { REMOVE_TARGETS, TABS } from './tools.ts';
 import { WORLD_WORKS, siblingOf } from '../sim/works.ts';
 import { ROAD_CLASSES, ROAD_LEVELS } from '../sim/roads.ts';
 import { TRIPS_PER_STEP } from '../sim/traffic.ts';
@@ -109,6 +109,23 @@ function branchTable(): string {
   return table(['One…', '…or the other', 'Requires'], rows);
 }
 
+/**
+ * The tabs that are subdivided, named with their sections. Read from TABS, not written out.
+ *
+ * Semicolons rather than "and" between the tabs: each clause already ends in an "and", so
+ * joining them with another one reads as one long list of sections.
+ */
+function splitTabs(): string {
+  return TABS.filter((t) => t.sections.length > 1).map(
+    (t) => `<b>${t.label}</b> into ${joinList(t.sections.map((s) => s.label))}`).join('; ');
+}
+
+/** "a, b and c" — an Oxford-comma-free list, because the manual is written in prose. */
+function joinList(parts: string[]): string {
+  if (parts.length < 2) return parts[0] ?? '';
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
 function table(headers: string[], rows: string[][]): string {
   return `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead>` +
     `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
@@ -148,6 +165,11 @@ export function buildManual(): ManualSection[] {
           <li><b>Watch the RCI meter</b> in the top bar. It shows what the city is short of.</li>
           <li><b>Add services</b> once you have residents to pay for them.</li>
         </ol>
+        <p><b>Where the tools are.</b> The tabs across the top split the rail by the job
+        you are doing, and the broader tabs split again into sections at the top of the
+        rail — ${splitTabs()}. Each tab remembers the section you left it on, and a
+        shortcut key for a tool you cannot see jumps the rail to it. <b>Inspect</b>,
+        <b>Remove</b> and <b>Bulldoze</b> are in every tab.</p>
         <p class="tip">Stuck? Pick the <b>Inspect</b> tool and click any tile. It will tell you
         exactly what is holding that tile back.</p>`,
     },

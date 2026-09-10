@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TOOLS, TABS, ALWAYS_ON, tabOfGroup } from '../src/app/tools.ts';
+import { TOOLS, TABS, ALWAYS_ON, tabOfGroup, placeOfGroup } from '../src/app/tools.ts';
 import { City } from '../src/sim/city.ts';
 import { FLAT_MAP } from '../src/sim/terrain.ts';
 import { CIVIC_DEFS, CIVIC_BY_KEY } from '../src/sim/tiles.ts';
@@ -200,4 +200,46 @@ test('a tab shows a workable number of tools', () => {
     const n = TOOLS.filter((t) => tabOfGroup(t.group) === tab.id).length;
     assert.ok(n <= TOOLS.length / 2, `tab '${tab.label}' holds ${n} of ${TOOLS.length} tools`);
   }
+});
+
+test('every group lands in exactly one section of its tab', () => {
+  // The tab mapping is derived from the sections, so a group in two sections of the same
+  // tab would be shown twice and hidden by whichever section you were not looking at.
+  for (const group of new Set(TOOLS.map((t) => t.group))) {
+    if (group === 'Basics') continue;
+    const owners = TABS.flatMap((t) => t.sections.filter((s) => s.groups.includes(group)));
+    assert.equal(owners.length, 1,
+      `group '${group}' is claimed by ${owners.length} sections`);
+  }
+});
+
+test('every section has tools in it', () => {
+  // An empty section is a button that appears to do nothing.
+  for (const tab of TABS) {
+    for (const s of tab.sections) {
+      const n = TOOLS.filter((t) => s.groups.includes(t.group)).length;
+      assert.ok(n > 0, `section '${tab.label} / ${s.label}' is empty`);
+    }
+  }
+});
+
+test('a section id is unique within its tab', () => {
+  for (const tab of TABS) {
+    const ids = tab.sections.map((s) => s.id);
+    assert.equal(new Set(ids).size, ids.length, `tab '${tab.label}' repeats a section id`);
+  }
+});
+
+test('placeOfGroup agrees with tabOfGroup', () => {
+  // Two ways of asking where a group lives is one way too many if they can disagree:
+  // the rail hides a group by section and follows a shortcut by tab.
+  for (const group of new Set(TOOLS.map((t) => t.group))) {
+    assert.equal(placeOfGroup(group)?.tab, tabOfGroup(group), `group '${group}'`);
+  }
+});
+
+test('a section a tab starts on always exists', () => {
+  // The rail defaults each tab to its first section, so a tab with none would show
+  // nothing at all.
+  for (const tab of TABS) assert.ok(tab.sections.length > 0, `tab '${tab.label}' has no sections`);
 });
